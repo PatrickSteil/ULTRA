@@ -34,9 +34,8 @@ public:
                   mu_ + walkTime + k * sigma_ + wmax};
   }
 
-  // default: no correltaion at all, hence rho = 0
   static GaussianDist slack(const GaussianDist &a, const GaussianDist &d,
-                            double walkTime, double rho = 0.0) {
+                            double rho, double walkTime) {
     double muDelta = d.mu_ - a.mu_ - walkTime;
     double cov = rho * a.sigma_ * d.sigma_;
     double varDelta = std::max(a.variance() + d.variance() - 2.0 * cov, 0.0);
@@ -45,12 +44,14 @@ public:
 
   double feasibilityProbability() const {
     if (sigma_ <= 0.0) {
-      return (mu_ >= 0.0) ? 1.0 : 0.0;
+      return (mu_ >= 0.0) ? 1.0 : 0.0; // recovers classical deterministic test
     }
     return standardNormalCdf(mu_ / sigma_);
   }
 
   double robustBound(double k = 2.0) const { return mu_ + k * sigma_; }
+
+  GaussianDist shifted(double c) const { return GaussianDist(mu_ + c, sigma_); }
 
 private:
   double mu_;

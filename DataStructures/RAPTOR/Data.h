@@ -4,7 +4,9 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "Entities/Journey.h"
@@ -1171,6 +1173,85 @@ private:
   }
 
 public:
+  inline double getCorrelation(const StopEventId from [[maybe_unused]],
+                               const StopEventId to
+                               [[maybe_unused]]) const noexcept {
+    // TODO for now
+    return 0.0;
+    // const auto it = eventCorrelations.find({from, to});
+    // if (it != eventCorrelations.end())
+    //   return it->second;
+    // const auto itRev = eventCorrelations.find({to, from});
+    // if (itRev != eventCorrelations.end())
+    //   return itRev->second;
+    // return 0.0;
+  }
+
+  inline void setCorrelation(const StopEventId a [[maybe_unused]],
+                             const StopEventId b [[maybe_unused]],
+                             const double rho [[maybe_unused]]) noexcept {
+    if (!(-1 <= rho && rho <= 1)) {
+      std::cout << "Rho needs to be [-1, 1], not " << rho << "!\n";
+      return;
+    }
+    // eventCorrelations[{a, b}] = rho;
+  }
+  inline void setSymmetricCorrelation(const StopEventId a [[maybe_unused]],
+                                      const StopEventId b [[maybe_unused]],
+                                      const double rho
+                                      [[maybe_unused]]) noexcept {
+    if (!(-1 <= rho && rho <= 1)) {
+      std::cout << "Rho needs to be [-1, 1], not " << rho << "!\n";
+      return;
+    }
+    // eventCorrelations[{a, b}] = rho;
+    // eventCorrelations[{b, a}] = rho;
+  }
+
+  // inline void clearCorrelations() noexcept { eventCorrelations.clear(); }
+
+  inline void applySimpleDelayScenario(
+      const unsigned seed = 42, const double initialSigma = 30.0,
+      const double phi = 0.85, const double processNoise = 20.0) noexcept {
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> noise(0.0, 1.0);
+
+    for (const RouteId route : routes()) {
+      const size_t tripSize = numberOfStopsInRoute(route);
+      for (size_t t = 0; t < numberOfTripsInRoute(route); t++) {
+        const size_t firstIndex = firstStopEventOfRoute[route] + t * tripSize;
+
+        double sigmaPrev2 = initialSigma * initialSigma;
+        double delayPrev = noise(rng) * initialSigma;
+
+        for (size_t j = 0; j < tripSize; j++) {
+          const size_t idx = firstIndex + j;
+          const StopEvent &se = stopEvents[idx];
+
+          double sigma2;
+          double delay;
+          if (j == 0) {
+            sigma2 = sigmaPrev2;
+            delay = delayPrev;
+          } else {
+            sigma2 = ar1PropagatedVariance(sigmaPrev2, phi,
+                                           processNoise * processNoise);
+            delay = phi * delayPrev + noise(rng) * processNoise;
+          }
+          const double sigma = std::sqrt(sigma2);
+
+          delayDistribution[idx] = {
+              GaussianDist(se.arrivalTime + delay, sigma),
+              GaussianDist(se.departureTime + delay, sigma)};
+
+          sigmaPrev2 = sigma2;
+          delayPrev = delay;
+        }
+      }
+    }
+  }
+
+public:
   std::vector<size_t> firstRouteSegmentOfStop;
 
   std::vector<size_t> firstStopIdOfRoute;
@@ -1190,6 +1271,8 @@ public:
 
   bool implicitDepartureBufferTimes;
   bool implicitArrivalBufferTimes;
+
+  // std::vector<std::pair<StopEventId, StopEventId>, double> eventCorrelations;
 };
 
 } // namespace RAPTOR
