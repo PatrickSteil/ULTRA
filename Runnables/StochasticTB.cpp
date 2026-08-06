@@ -1,8 +1,6 @@
-#include "Commands/BenchmarkULTRA.h"
 #include "Commands/NetworkIO.h"
 #include "Commands/NetworkTools.h"
 #include "Commands/Stochastic.h"
-#include "Commands/ULTRAPreprocessing.h"
 
 #include "../Helpers/Console/CommandLineParser.h"
 #include "../Helpers/MultiThreading.h"

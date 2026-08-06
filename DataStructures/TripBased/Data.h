@@ -252,24 +252,6 @@ public:
     return reverseData;
   }
 
-  inline void removeInfeasibleShortcuts() noexcept {
-    TransferGraph temp;
-    temp.reserve(stopEventGraph.numVertices(), stopEventGraph.numEdges());
-    for (const Vertex fromStopEvent : stopEventGraph.vertices()) {
-      temp.addVertex();
-      for (const Edge shortcut : stopEventGraph.edgesFrom(fromStopEvent)) {
-        const Vertex toStopEvent = stopEventGraph.get(ToVertex, shortcut);
-        const int travelTime = stopEventGraph.get(TravelTime, shortcut);
-        if (arrivalTime(StopEventId(fromStopEvent)) + travelTime >
-            departureTime(StopEventId(toStopEvent)))
-          continue;
-        temp.addEdge(fromStopEvent, toStopEvent,
-                     stopEventGraph.edgeRecord(shortcut));
-      }
-    }
-    Graph::move(std::move(temp), stopEventGraph);
-  }
-
   inline void printInfo() const noexcept {
     int firstDay = std::numeric_limits<int>::max();
     int lastDay = std::numeric_limits<int>::min();
@@ -335,7 +317,7 @@ public:
   std::vector<TripId> tripOfStopEvent;
   std::vector<StopIndex> indexOfStopEvent;
 
-  TransferGraph stopEventGraph;
+  StaticGraphWithPropability stopEventGraph;
 
   std::vector<ArrivalEvent> arrivalEvents;
 };

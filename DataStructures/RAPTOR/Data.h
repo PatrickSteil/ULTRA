@@ -6,6 +6,7 @@
 #include <map>
 #include <random>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -1173,18 +1174,13 @@ private:
   }
 
 public:
-  inline double getCorrelation(const StopEventId from [[maybe_unused]],
-                               const StopEventId to
-                               [[maybe_unused]]) const noexcept {
-    // TODO for now
+  inline double getCorrelation(const StopEventId a,
+                               const StopEventId b) const noexcept {
+    if (const auto it = eventCorrelations.find(makeKey(a, b));
+        it != eventCorrelations.end()) {
+      return it->second;
+    }
     return 0.0;
-    // const auto it = eventCorrelations.find({from, to});
-    // if (it != eventCorrelations.end())
-    //   return it->second;
-    // const auto itRev = eventCorrelations.find({to, from});
-    // if (itRev != eventCorrelations.end())
-    //   return itRev->second;
-    // return 0.0;
   }
 
   inline void setCorrelation(const StopEventId a [[maybe_unused]],
@@ -1194,21 +1190,11 @@ public:
       std::cout << "Rho needs to be [-1, 1], not " << rho << "!\n";
       return;
     }
-    // eventCorrelations[{a, b}] = rho;
-  }
-  inline void setSymmetricCorrelation(const StopEventId a [[maybe_unused]],
-                                      const StopEventId b [[maybe_unused]],
-                                      const double rho
-                                      [[maybe_unused]]) noexcept {
-    if (!(-1 <= rho && rho <= 1)) {
-      std::cout << "Rho needs to be [-1, 1], not " << rho << "!\n";
-      return;
-    }
-    // eventCorrelations[{a, b}] = rho;
-    // eventCorrelations[{b, a}] = rho;
+
+    eventCorrelations[makeKey(a, b)] = rho;
   }
 
-  // inline void clearCorrelations() noexcept { eventCorrelations.clear(); }
+  inline void clearCorrelations() noexcept { eventCorrelations.clear(); }
 
   inline void applySimpleDelayScenario(
       const unsigned seed = 42, const double initialSigma = 30.0,
@@ -1272,7 +1258,7 @@ public:
   bool implicitDepartureBufferTimes;
   bool implicitArrivalBufferTimes;
 
-  // std::vector<std::pair<StopEventId, StopEventId>, double> eventCorrelations;
+  std::unordered_map<CorrelationKey, double> eventCorrelations;
 };
 
 } // namespace RAPTOR

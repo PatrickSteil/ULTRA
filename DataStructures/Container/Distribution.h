@@ -93,3 +93,11 @@ inline double ar1Correlation(double covIJ, double sigmaI, double sigmaJ) {
     return 0.0;
   return covIJ / (sigmaI * sigmaJ);
 }
+
+using CorrelationKey = uint64_t;
+
+constexpr CorrelationKey makeKey(StopEventId a, StopEventId b) noexcept {
+  const auto x = static_cast<uint32_t>(std::min(a, b));
+  const auto y = static_cast<uint32_t>(std::max(a, b));
+  return (uint64_t{x} << 32) | y;
+}

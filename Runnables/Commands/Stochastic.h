@@ -33,9 +33,7 @@ inline void printTripTransferStats(const Data &data, const TripId trip,
     const GaussianDist &arrival =
         data.raptorData.delayDistribution[fromEvent].first;
 
-    size_t degree = 0;
-    for (const Edge e : data.stopEventGraph.edgesFrom(Vertex(fromEvent)))
-      degree++;
+    size_t degree = data.stopEventGraph.outDegree(Vertex(fromEvent));
     if (degree == 0)
       continue;
 
