@@ -234,6 +234,8 @@ private:
         if (!label.findEarliestTripBinary(stopIndex, stopDepartureTime,
                                           tripIndex))
           continue;
+        // TODO look at this case; 0.0 always dominates, maybe we can add a
+        // custom enqueue for this without checking dominace
         enqueue(firstTrip + tripIndex, StopIndex(stopIndex + 1), 0.0);
       }
     }
@@ -326,16 +328,6 @@ private:
     profiler.countMetric(METRIC_ENQUEUES);
     const EdgeLabel &label = edgeLabels[edge];
     probabilityCost += label.probabilityCost;
-
-    // std::cout << "ENQ Edge " << (int)edge
-    //           << ", p(edge)=" << (double)label.probabilityCost << " ("
-    //           << costToProbability(label.probabilityCost) << " %)"
-    //           << ", current_p=" << (double)probabilityCost << " ("
-    //           << costToProbability(probabilityCost) << " %)"
-    //           << ", reachedIndex(stopEvent)="
-    //           << probabilityCostData(label.stopEvent) << " ("
-    //           << costToProbability(probabilityCostData(label.stopEvent))
-    //           << " %)\n";
     if (probabilityCost >= probabilityCostData(label.stopEvent))
       return;
     const StopEventId end = probabilityCostData.getScanEnd(

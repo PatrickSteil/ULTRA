@@ -37,17 +37,18 @@ public:
     return end;
   }
 
-  inline void update(const StopEventId begin, const StopEventId tripEnd,
-                     const StopEventId /*routeEnd*/,
-                     const StopIndex /*tripLength*/,
+  inline void update(const StopEventId stopEvent, const StopEventId tripEnd,
+                     const StopEventId routeEnd, const StopIndex tripLength,
                      const double newCost) noexcept {
-    assert(begin < cost.size());
-    assert(tripEnd < cost.size());
-    assert(begin <= tripEnd);
-    for (StopEventId i = begin; i < tripEnd; i++) {
-      if (cost[i] <= newCost)
-        break;
-      cost[i] = newCost;
+    StopEventId currentStart = stopEvent;
+    StopEventId currentEnd = tripEnd;
+    for (; currentStart < routeEnd;
+         currentStart += tripLength, currentEnd += tripLength) {
+      for (StopEventId event = currentStart; event < currentEnd; event++) {
+        if (cost[event] <= newCost)
+          break;
+        cost[event] = newCost;
+      }
     }
   }
 
