@@ -172,6 +172,29 @@ struct ProbabilityParetoLabel {
            probabilityCost <= other.probabilityCost;
   }
 
+  inline bool isWithinSlack(const std::vector<ArrivalLabel> &anchorLabels,
+                            const int departureTime, const double arrivalSlack,
+                            const double tripSlack) const noexcept {
+    for (const ArrivalLabel &anchorLabel : anchorLabels) {
+      if (isWithinSlack(anchorLabel, departureTime, arrivalSlack, tripSlack))
+        return true;
+      if (anchorLabel.numberOfTrips <= numberOfTrips)
+        break;
+    }
+    return false;
+  }
+
+  inline bool isWithinSlack(const ArrivalLabel &anchorLabel,
+                            const int departureTime, const double arrivalSlack,
+                            const double tripSlack) const noexcept {
+    if (travelTime(departureTime) >
+        anchorLabel.travelTime(departureTime) * arrivalSlack)
+      return false;
+    if (numberOfTrips > std::ceil(anchorLabel.numberOfTrips * tripSlack))
+      return false;
+    return true;
+  }
+
   inline friend std::ostream &
   operator<<(std::ostream &out, const ProbabilityParetoLabel &label) noexcept {
     return out << "arrivalTime: " << label.arrivalTime

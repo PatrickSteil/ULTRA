@@ -5,6 +5,7 @@
 #include <set>
 #include <string>
 
+#include "../../Algorithms/TripBased/BoundedMcQuery/BoundedMcProbabilityQuery.h"
 #include "../../Algorithms/TripBased/Preprocessing/StopEventGraphBuilderStochastic.h"
 #include "../../Algorithms/TripBased/Query/McProbabilityQuery.h"
 
@@ -315,7 +316,6 @@ public:
   virtual void execute() noexcept {
     const std::string inputFile = getParameter("Trip-Based input file");
     const size_t numQueries = getParameter<size_t>("Number of queries");
-    const size_t seed = getParameter<size_t>("Seed");
     const double minProbabilityPercent =
         getParameter<double>("Min probability (%)");
     const double similarityThreshold =
@@ -323,11 +323,6 @@ public:
 
     TripBased::Data data(inputFile);
     data.printInfo();
-
-    std::mt19937 randomGenerator(seed);
-    std::uniform_int_distribution<> stopDistribution(0,
-                                                     data.numberOfStops() - 1);
-    std::uniform_int_distribution<> timeDistribution(0, 24 * 60 * 60);
 
     TripBased::McProbabilityQuery<TripBased::AggregateProfiler> algo(data);
     if (minProbabilityPercent > 0.0)
@@ -392,6 +387,53 @@ private:
   }
 };
 
+class RunBoundedMCProbabilityQueries : public ParameterizedCommand {
+
+public:
+  RunBoundedMCProbabilityQueries(BasicShell &shell)
+      : ParameterizedCommand(
+            shell, "runBoundedMCProbabilityQueries",
+            "Runs the given number of random Bounded Mc Prob-TB queries.") {
+    addParameter("Trip-Based input file");
+    addParameter("Bounded forward Trip-Based input file");
+    addParameter("Bounded backward Trip-Based input file");
+    addParameter("Number of queries");
+    addParameter("Arrival slack");
+    addParameter("Trip slack");
+  }
+
+  virtual void execute() noexcept {
+    TripBased::Data tripBasedData(getParameter("Trip-Based input file"));
+    tripBasedData.printInfo();
+    TripBased::Data forwardBoundedData(
+        getParameter("Bounded forward Trip-Based input file"));
+    forwardBoundedData.printInfo();
+    TripBased::Data backwardBoundedData(
+        getParameter("Bounded backward Trip-Based input file"));
+    backwardBoundedData.printInfo();
+    TripBased::BoundedMcProbabilityQuery<TripBased::AggregateProfiler> algo(
+        tripBasedData, forwardBoundedData, backwardBoundedData);
+
+    const double arrivalSlack = getParameter<double>("Arrival slack");
+    const double tripSlack = getParameter<double>("Trip slack");
+
+    const size_t n = getParameter<size_t>("Number of queries");
+    const std::vector<VertexQuery> queries =
+        generateRandomVertexQueries(tripBasedData.numberOfStops(), n);
+
+    double numJourneys = 0;
+    for (const VertexQuery &query : queries) {
+      algo.run(StopId(query.source), query.departureTime, StopId(query.target),
+               arrivalSlack, tripSlack);
+      numJourneys += algo.getJourneys().size();
+    }
+    algo.getProfiler().printStatistics();
+    std::cout << "Avg. journeys: " << String::prettyDouble(numJourneys / n)
+              << std::endl;
+  }
+};
+
+// RUN ONE QUERY
 class RunMCProbabilityQuery : public ParameterizedCommand {
 
 public:

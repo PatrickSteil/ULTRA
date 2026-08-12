@@ -24,6 +24,8 @@ int main(int argc, char **argv) {
   new RunMCProbabilityQueries(shell);
   new RunMCProbabilityQuery(shell);
 
+  new RunBoundedMCProbabilityQueries(shell);
+
   shell.run();
   return 0;
 }
