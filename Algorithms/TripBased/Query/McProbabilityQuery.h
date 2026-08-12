@@ -119,6 +119,11 @@ public:
                               METRIC_ENQUEUES, METRIC_ADD_JOURNEYS});
   }
 
+  inline void setMinProbability(const double pMin) noexcept {
+    maxProbabilityCost = (pMin <= 0.0) ? std::numeric_limits<double>::infinity()
+                                       : probabilityToCost(pMin);
+  }
+
   inline void run(const Vertex source, const int departureTime,
                   const Vertex target) noexcept {
     Assert(data.isStop(source), "Source " << source << " is not a stop!");
@@ -316,6 +321,8 @@ private:
     const StopEventId stopEvent = StopEventId(info.tripStart + index);
     if (probabilityCost >= probabilityCostData(stopEvent))
       return;
+
+    assert(StopEventId(stopEvent + 1) <= info.tripEnd);
     const StopEventId end = probabilityCostData.getScanEnd(
         StopEventId(stopEvent + 1), info.tripEnd, probabilityCost);
     queue.emplace_back(stopEvent, end, probabilityCost);
@@ -330,6 +337,7 @@ private:
     probabilityCost += label.probabilityCost;
     if (probabilityCost >= probabilityCostData(label.stopEvent))
       return;
+    assert(StopEventId(label.stopEvent + 1) <= label.tripEnd);
     const StopEventId end = probabilityCostData.getScanEnd(
         StopEventId(label.stopEvent + 1), label.tripEnd, probabilityCost);
     queue.emplace_back(label.stopEvent, end, probabilityCost, parent);
@@ -338,6 +346,9 @@ private:
   }
 
   inline void addTargetLabel(const TargetLabel &newLabel) noexcept {
+    // hard limit
+    if (newLabel.probabilityCost > maxProbabilityCost)
+      return;
     profiler.countMetric(METRIC_ADD_JOURNEYS);
     if (!bestTargetBag.merge(newLabel))
       return;
@@ -439,11 +450,16 @@ private:
   std::vector<RouteLabel> routeLabels;
   std::vector<u_int8_t> offsets;
 
+  double maxProbabilityCost = std::numeric_limits<double>::infinity();
+
   StopId sourceStop;
   StopId targetStop;
   int sourceDepartureTime;
 
   Profiler profiler;
 };
+
+// fillfirst queue with first-K trips of route until succeess >= 95%
+// in der ersten queue ist dominanz quatsch
 
 } // namespace TripBased

@@ -168,8 +168,8 @@ struct ProbabilityParetoLabel {
 
   inline bool dominates(const ProbabilityParetoLabel &other) const noexcept {
     return arrivalTime <= other.arrivalTime &&
-           probabilityCost <= other.probabilityCost &&
-           numberOfTrips <= other.numberOfTrips;
+           numberOfTrips <= other.numberOfTrips &&
+           probabilityCost <= other.probabilityCost;
   }
 
   inline friend std::ostream &
