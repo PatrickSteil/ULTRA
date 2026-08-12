@@ -292,12 +292,33 @@ public:
     algo.run(source, departureTime, target);
 
     algo.getProfiler().printStatistics();
-    const auto results = algo.getResults();
+    const auto journeys = algo.getJourneys();
+    const auto paretoFront = algo.getResults();
 
-    std::cout << "Found " << results.size()
+    std::cout << "Found " << journeys.size()
               << " Pareto-optimal journeys:" << std::endl;
-    for (const auto &result : results) {
-      std::cout << result << std::endl;
+    for (size_t i = 0; i < journeys.size(); ++i) {
+      std::cout << "Journey: " << (int)i
+                << ", ArrTime: " << (int)paretoFront[i].arrivalTime
+                << ", Nr Trips: " << (int)paretoFront[i].numberOfTrips
+                << ", Prob: " << paretoFront[i].probability() << " %\n";
+      const auto &j = journeys[i];
+      for (const auto &leg : j) {
+        std::cout << "from: " << leg.from << ", to: " << leg.to
+                  << ", dep-Time: " << leg.departureTime
+                  << ", arr-Time: " << leg.arrivalTime;
+        if (leg.usesRoute) {
+          std::cout << ", route: " << leg.routeId << "\n";
+        } else {
+          std::cout << ", transfer: " << leg.routeId << " ("
+                    << (Edge(leg.routeId) != noEdge
+                            ? data.stopEventGraph.get(Probability,
+                                                      Edge(leg.routeId))
+                            : 100.0)
+                    << " %)\n";
+        }
+      }
+      std::cout << std::endl;
     }
   }
 };
