@@ -1,34 +1,58 @@
 #pragma once
 
-#include <cmath>
+#include <cassert>
 #include <limits>
+#include <vector>
 
-#include "ThirdCriteriaData.h"
+#include "../../../DataStructures/TripBased/Data.h"
 
 namespace TripBased {
 
-struct ProbabilityCostLabel {
+class ProbabilityCostData {
 
-  double cost;
+public:
+  static constexpr double Infinity = std::numeric_limits<double>::infinity();
 
-  static constexpr ProbabilityCostLabel infinity() noexcept {
-    return {std::numeric_limits<double>::infinity()};
+  ProbabilityCostData(const Data &data)
+      : cost(data.numberOfStopEvents(), Infinity) {}
+
+  inline void clear() noexcept {
+    std::fill(cost.begin(), cost.end(), Infinity);
   }
 
-  friend constexpr bool operator<=(const ProbabilityCostLabel &a,
-                                   const ProbabilityCostLabel &b) noexcept {
-    return a.cost <= b.cost;
+  inline double operator()(const StopEventId stopEvent) const noexcept {
+    assert(stopEvent < cost.size());
+    return cost[stopEvent];
   }
+
+  inline StopEventId getScanEnd(const StopEventId begin, const StopEventId end,
+                                const double newCost) const noexcept {
+    assert(begin < cost.size());
+    assert(end < cost.size());
+    assert(begin <= end);
+    for (StopEventId i = begin; i < end; i++) {
+      if (cost[i] <= newCost)
+        return i;
+    }
+    return end;
+  }
+
+  inline void update(const StopEventId begin, const StopEventId tripEnd,
+                     const StopEventId /*routeEnd*/,
+                     const StopIndex /*tripLength*/,
+                     const double newCost) noexcept {
+    assert(begin < cost.size());
+    assert(tripEnd < cost.size());
+    assert(begin <= tripEnd);
+    for (StopEventId i = begin; i < tripEnd; i++) {
+      if (cost[i] <= newCost)
+        break;
+      cost[i] = newCost;
+    }
+  }
+
+private:
+  std::vector<double> cost;
 };
-
-using ProbabilityData = TripCriterionData<ProbabilityCostLabel>;
-
-inline double probabilityToCost(const double probability) noexcept {
-  return -std::log(probability);
-}
-
-inline double costToProbability(const double cost) noexcept {
-  return std::exp(-cost);
-}
 
 } // namespace TripBased
