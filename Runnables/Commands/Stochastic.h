@@ -4,7 +4,9 @@
 #include <string>
 
 #include "../../Algorithms/TripBased/Preprocessing/StopEventGraphBuilderStochastic.h"
-#include "../../Algorithms/TripBased/Query/McPropabilityQuery.h"
+#include "../../Algorithms/TripBased/Query/McProbabilityQuery.h"
+
+#include "../../DataStructures/Queries/Queries.h"
 
 #include "../../Helpers/MultiThreading.h"
 #include "../../Helpers/String/String.h"
@@ -70,8 +72,8 @@ inline void printTripTransferStats(const Data &data, const TripId trip,
       }
 
       const double rho = data.raptorData.getCorrelation(fromEvent, toEvent);
-      const double p =
-          transferFeasibilityProbability(arrival, departure, rho, walkTime);
+      const double p = data.stopEventGraph.get(Probability, e);
+      // transferFeasibilityProbability(arrival, departure, rho, walkTime);
 
       totalTransfers++;
       probSum += p;
@@ -221,17 +223,17 @@ public:
   }
 };
 
-class RunMCPropabilityQueries : public ParameterizedCommand {
+class RunMCProbabilityQueries : public ParameterizedCommand {
 
 public:
-  RunMCPropabilityQueries(BasicShell &shell)
-      : ParameterizedCommand(shell, "runMCPropabilityQueries",
+  RunMCProbabilityQueries(BasicShell &shell)
+      : ParameterizedCommand(shell, "runMCProbabilityQueries",
                              "Runs random Multi-Criteria Trip-Based queries "
                              "maximizing arrival probability, "
                              "with arrival time and number of trips as the "
                              "other two criteria.") {
     addParameter("Trip-Based input file");
-    addParameter("Number of queries");
+    addParameter("Number of queries", "500");
     addParameter("Seed", "42");
   }
 
@@ -248,48 +250,28 @@ public:
                                                      data.numberOfStops() - 1);
     std::uniform_int_distribution<> timeDistribution(0, 24 * 60 * 60);
 
-    TripBased::McPropabilityQuery<TripBased::AggregateProfiler> query(data);
+    TripBased::McProbabilityQuery<TripBased::AggregateProfiler> algo(data);
+    std::size_t numJourneys = 0;
 
-    double totalTime = 0.0;
-    size_t totalResults = 0;
-    size_t queriesWithNoResult = 0;
+    const std::vector<StopQuery> queries =
+        generateRandomStopQueries(data.numberOfStops(), numQueries);
 
-    for (size_t i = 0; i < numQueries; i++) {
-      const StopId source = StopId(stopDistribution(randomGenerator));
-      const StopId target = StopId(stopDistribution(randomGenerator));
-      const int departureTime = timeDistribution(randomGenerator);
-      if (source == target)
-        continue;
-
-      Timer timer;
-      query.run(source, departureTime, target);
-      totalTime += timer.elapsedMicroseconds();
-
-      const std::vector<RAPTOR::ProbabilityParetoLabel> results =
-          query.getResults();
-      totalResults += results.size();
-      if (results.empty())
-        queriesWithNoResult++;
+    for (const StopQuery &query : queries) {
+      algo.run(query.source, query.departureTime, query.target);
+      numJourneys += algo.getResults().size();
     }
 
-    std::cout << "Ran " << String::prettyInt(numQueries) << " queries."
-              << std::endl;
-    std::cout << "Average running time:      "
-              << String::prettyDouble(totalTime / numQueries) << " microseconds"
-              << std::endl;
-    std::cout << "Average result-set size:   "
-              << String::prettyDouble((double)totalResults / numQueries)
-              << std::endl;
-    std::cout << "Queries without a result:  "
-              << String::prettyInt(queriesWithNoResult) << std::endl;
+    algo.getProfiler().printStatistics();
+    std::cout << "Avg. journeys: "
+              << String::prettyDouble(numJourneys / numQueries) << std::endl;
   }
 };
 
-class RunMCPropabilityQuery : public ParameterizedCommand {
+class RunMCProbabilityQuery : public ParameterizedCommand {
 
 public:
-  RunMCPropabilityQuery(BasicShell &shell)
-      : ParameterizedCommand(shell, "runMCPropabilityQuery",
+  RunMCProbabilityQuery(BasicShell &shell)
+      : ParameterizedCommand(shell, "runMCProbabilityQuery",
                              "Runs a single Multi-Criteria Trip-Based query "
                              "maximizing arrival probability.") {
     addParameter("Trip-Based input file");
@@ -306,15 +288,12 @@ public:
 
     TripBased::Data data(inputFile);
 
-    TripBased::McPropabilityQuery<TripBased::AggregateProfiler> query(data);
-    Timer timer;
-    query.run(source, departureTime, target);
-    const double runningTime = timer.elapsedMicroseconds();
+    TripBased::McProbabilityQuery<TripBased::AggregateProfiler> algo(data);
+    algo.run(source, departureTime, target);
 
-    const std::vector<RAPTOR::ProbabilityParetoLabel> results =
-        query.getResults();
-    std::cout << "Running time: " << String::prettyDouble(runningTime)
-              << " microseconds" << std::endl;
+    algo.getProfiler().printStatistics();
+    const auto results = algo.getResults();
+
     std::cout << "Found " << results.size()
               << " Pareto-optimal journeys:" << std::endl;
     for (const auto &result : results) {

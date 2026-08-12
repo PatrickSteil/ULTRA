@@ -176,6 +176,7 @@ struct ProbabilityParetoLabel {
   operator<<(std::ostream &out, const ProbabilityParetoLabel &label) noexcept {
     return out << "arrivalTime: " << label.arrivalTime
                << ", probability: " << label.probability()
+               << " (raw: " << label.probabilityCost << ")"
                << ", numberOfTrips: " << label.numberOfTrips;
   }
 
@@ -194,26 +195,6 @@ struct ProbabilityParetoLabel {
   double probabilityCost;
   size_t numberOfTrips;
 };
-
-enum TransferTimeBuckets {
-  BUCKET_NONE = 0,
-  BUCKET_LITTLE = 1,
-  BUCKET_MEDIUM = 2,
-  BUCKET_MUCH = 3,
-  BUCKET_EXTREME = 4,
-  NUM_TRANSFER_TIME_BUCKETS = 5,
-};
-
-int transferTimeBucketThreshold[NUM_TRANSFER_TIME_BUCKETS - 1] = {0, 600, 1200,
-                                                                  2400};
-
-inline int getTransferTimeBucketValue(const int transferTime) noexcept {
-  for (size_t i = 0; i < NUM_TRANSFER_TIME_BUCKETS - 1; i++) {
-    if (transferTime <= transferTimeBucketThreshold[i])
-      return i;
-  }
-  return BUCKET_EXTREME;
-}
 
 template <size_t NUM_MODES> struct MultimodalParetoLabel {
   inline static constexpr size_t NumTransferModes = NUM_MODES;

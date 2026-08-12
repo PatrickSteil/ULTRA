@@ -11,11 +11,11 @@
 #include "Profiler.h"
 
 namespace TripBased {
-template <typename PROFILER = NoProfiler> class McPropabilityQuery {
+template <typename PROFILER = NoProfiler> class McProbabilityQuery {
 
 public:
   using Profiler = PROFILER;
-  using Type = McPropabilityQuery<Profiler>;
+  using Type = McProbabilityQuery<Profiler>;
 
 private:
   struct TripLabel {
@@ -70,7 +70,7 @@ private:
   using TargetBag = RAPTOR::Bag<TargetLabel>;
 
 public:
-  McPropabilityQuery(const Data &data)
+  McProbabilityQuery(const Data &data)
       : data(data), transferGraph(data.getTransferGraph()),
         reverseTransferGraph(transferGraph),
         transferFromSource(data.numberOfStops(), INFTY),
@@ -92,7 +92,7 @@ public:
     }
     for (const Edge edge : data.stopEventGraph.edges()) {
       edgeLabels[edge].probabilityCost =
-          probabilityToCost(data.stopEventGraph.get(Propability, edge));
+          probabilityToCost(data.stopEventGraph.get(Probability, edge));
       edgeLabels[edge].stopEvent =
           StopEventId(data.stopEventGraph.get(ToVertex, edge) + 1);
       const TripId trip =
@@ -253,17 +253,18 @@ private:
         profiler.countMetric(METRIC_SCANNED_TRIPS);
         for (StopEventId j(label.begin + 1); j < label.end; j++) {
           const double probabilityCost = probabilityCostData(j);
-          if (probabilityCost < label.probabilityCost)
+          if (probabilityCost < label.probabilityCost) {
             label.end = j;
-          else if (probabilityCost == label.probabilityCost &&
-                   offsets[j] != 0) {
-            const u_int8_t offset = offsets[j];
-            for (; j < label.end; j++) {
-              if (probabilityCostData(StopEventId(j - offset)) ==
-                  label.probabilityCost)
-                label.end = j;
+          } else {
+            if (probabilityCost == label.probabilityCost && offsets[j] != 0) {
+              const u_int8_t offset = offsets[j];
+              for (; j < label.end; j++) {
+                if (probabilityCostData(StopEventId(j - offset)) ==
+                    label.probabilityCost)
+                  label.end = j;
+              }
+              break;
             }
-            break;
           }
         }
       }
@@ -325,6 +326,16 @@ private:
     profiler.countMetric(METRIC_ENQUEUES);
     const EdgeLabel &label = edgeLabels[edge];
     probabilityCost += label.probabilityCost;
+
+    // std::cout << "ENQ Edge " << (int)edge
+    //           << ", p(edge)=" << (double)label.probabilityCost << " ("
+    //           << costToProbability(label.probabilityCost) << " %)"
+    //           << ", current_p=" << (double)probabilityCost << " ("
+    //           << costToProbability(probabilityCost) << " %)"
+    //           << ", reachedIndex(stopEvent)="
+    //           << probabilityCostData(label.stopEvent) << " ("
+    //           << costToProbability(probabilityCostData(label.stopEvent))
+    //           << " %)\n";
     if (probabilityCost >= probabilityCostData(label.stopEvent))
       return;
     const StopEventId end = probabilityCostData.getScanEnd(

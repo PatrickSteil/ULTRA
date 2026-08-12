@@ -21,8 +21,8 @@ int main(int argc, char **argv) {
   new PrintTripTransferStats(shell);
 
   // new RunTransitiveTBQueries(shell);
-  new RunMCPropabilityQueries(shell);
-  new RunMCPropabilityQuery(shell);
+  new RunMCProbabilityQueries(shell);
+  new RunMCProbabilityQuery(shell);
 
   shell.run();
   return 0;

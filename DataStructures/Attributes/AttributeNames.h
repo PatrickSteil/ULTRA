@@ -93,7 +93,7 @@ using OriginalEdgeType = AttributeNameWrapper<26>;
 // 27 is unused
 using MinOriginDelayType = AttributeNameWrapper<28>;
 using MaxOriginDelayType = AttributeNameWrapper<29>;
-using Propability = AttributeNameWrapper<30>;
+using Probability = AttributeNameWrapper<30>;
 using UnknownType = AttributeNameWrapper<31>;
 // Ensure that Unknown is the last entry!
 
@@ -126,7 +126,7 @@ constexpr ImplementationDetail::ProfileIndexType ProfileIndex;
 constexpr ImplementationDetail::OriginalEdgeType OriginalEdge;
 constexpr ImplementationDetail::MinOriginDelayType MinOriginDelay;
 constexpr ImplementationDetail::MaxOriginDelayType MaxOriginDelay;
-constexpr ImplementationDetail::Propability Propability;
+constexpr ImplementationDetail::Probability Probability;
 constexpr ImplementationDetail::UnknownType Unknown;
 // Ensure that Unknown is the last entry!
 
@@ -163,7 +163,7 @@ constexpr const char *AttributeNameStrings[] = {
     /* 27 */ "(Unused)",
     /* 28 */ "MinOriginDelay",
     /* 29 */ "MaxOriginDelay",
-    /* 30 */ "Propability",
+    /* 30 */ "Probability",
     /* 31 */ "Unknown"
     // Ensure that Unknown is the last entry!
 };

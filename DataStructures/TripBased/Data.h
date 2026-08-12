@@ -317,7 +317,7 @@ public:
   std::vector<TripId> tripOfStopEvent;
   std::vector<StopIndex> indexOfStopEvent;
 
-  StaticGraphWithPropability stopEventGraph;
+  StaticGraphWithProbability stopEventGraph;
 
   std::vector<ArrivalEvent> arrivalEvents;
 };

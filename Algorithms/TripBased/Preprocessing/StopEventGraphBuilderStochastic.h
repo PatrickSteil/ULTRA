@@ -362,7 +362,8 @@ public:
       }
 
       for (const TransferInfo &transfer : keepTransfers) {
-        keptTransfers.addEdge(Vertex(tripEvent), Vertex(transfer.toEvent));
+        keptTransfers.addEdge(Vertex(tripEvent), Vertex(transfer.toEvent))
+            .set(Probability, transfer.probability);
       }
       if (verbose)
         std::cout << "  kept " << keepTransfers.size() << "/"
@@ -377,11 +378,12 @@ public:
     }
   }
 
-  inline const SimpleDynamicGraph &getStopEventGraph() const noexcept {
+  inline const SimpleDynamicGraphWithProbability &
+  getStopEventGraph() const noexcept {
     return keptTransfers;
   }
 
-  inline SimpleDynamicGraph &getStopEventGraph() noexcept {
+  inline SimpleDynamicGraphWithProbability &getStopEventGraph() noexcept {
     return keptTransfers;
   }
 
@@ -539,7 +541,6 @@ private:
         foundFeasible = true;
       }
 
-      // Only allow early termination once we've covered the deterministic case.
       if (passedAnchor) {
         if (p >= config.phaseAProbThreshold)
           break;
@@ -621,8 +622,8 @@ private:
   StochasticConfig config;
   CorrelationFunction correlationOf;
 
-  SimpleDynamicGraph generatedTransfers;
-  SimpleDynamicGraph keptTransfers;
+  SimpleDynamicGraphWithProbability generatedTransfers;
+  SimpleDynamicGraphWithProbability keptTransfers;
 
   std::vector<std::vector<TransferInfo>> transfersByEvent;
 
@@ -653,7 +654,7 @@ inline void
 ComputeStochasticStopEventGraph(Data &data, const int numberOfThreads,
                                 const int pinMultiplier = 1) noexcept {
   Progress progress(data.numberOfTrips());
-  SimpleEdgeList stopEventGraph;
+  SimpleDynamicGraphWithProbability stopEventGraph;
   stopEventGraph.addVertices(data.numberOfStopEvents());
 
   const int numCores = numberOfCores();
@@ -688,8 +689,10 @@ ComputeStochasticStopEventGraph(Data &data, const int numberOfThreads,
     {
       for (const auto [edge, from] :
            builder.getStopEventGraph().edgesWithFromVertex()) {
-        stopEventGraph.addEdge(from,
-                               builder.getStopEventGraph().get(ToVertex, edge));
+        stopEventGraph
+            .addEdge(from, builder.getStopEventGraph().get(ToVertex, edge))
+            .set(Probability,
+                 builder.getStopEventGraph().get(Probability, edge));
       }
     }
   }
@@ -721,7 +724,7 @@ inline void ComputeStochasticStopEventGraphRouteBased(
     Data &data, const int numberOfThreads,
     const int pinMultiplier = 1) noexcept {
   Progress progress(data.numberOfRoutes());
-  SimpleEdgeList stopEventGraph;
+  SimpleDynamicGraphWithProbability stopEventGraph;
   stopEventGraph.addVertices(data.numberOfStopEvents());
 
   const int numCores = numberOfCores();
@@ -755,8 +758,10 @@ inline void ComputeStochasticStopEventGraphRouteBased(
     {
       for (const auto [edge, from] :
            builder.getStopEventGraph().edgesWithFromVertex()) {
-        stopEventGraph.addEdge(from,
-                               builder.getStopEventGraph().get(ToVertex, edge));
+        stopEventGraph
+            .addEdge(from, builder.getStopEventGraph().get(ToVertex, edge))
+            .set(Probability,
+                 builder.getStopEventGraph().get(Probability, edge));
       }
     }
   }

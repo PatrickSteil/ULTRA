@@ -31,7 +31,7 @@ using WithReverseEdgesAndWeight =
     List<Attribute<ReverseEdge, Edge>, Attribute<Weight, int>>;
 using WithReverseEdgesAndCapacity =
     List<Attribute<ReverseEdge, Edge>, Attribute<Capacity, int>>;
-using WithPropability = List<Attribute<Propability, double>>;
+using WithProbability = List<Attribute<Probability, double>>;
 
 using TransferGraph = StaticGraph<WithCoordinates, WithTravelTime>;
 using DynamicTransferGraph = DynamicGraph<WithCoordinates, WithTravelTime>;
@@ -62,8 +62,15 @@ using DelayGraph = StaticGraph<WithCoordinates, WithTravelTimeAndDelays>;
 using DynamicDelayGraph =
     DynamicGraph<WithCoordinates, WithTravelTimeAndDelays>;
 
-using StaticGraphWithPropability =
-    StaticGraph<NoVertexAttributes, WithPropability>;
+using StaticGraphWithProbability =
+    StaticGraph<NoVertexAttributes, WithProbability>;
+
+using SimpleDynamicGraphWithProbability =
+    DynamicGraph<NoVertexAttributes, WithProbability>;
+using SimpleStaticGraphWithProbability =
+    StaticGraph<NoVertexAttributes, WithProbability>;
+using SimpleEdgeListWithProbability =
+    EdgeList<NoVertexAttributes, WithProbability>;
 
 #include "Utils/Conversion.h"
 #include "Utils/IO.h"
