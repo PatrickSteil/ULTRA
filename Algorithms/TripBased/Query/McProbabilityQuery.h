@@ -211,25 +211,45 @@ private:
 
   inline void evaluateInitialTransfers() noexcept {
     profiler.startPhase();
-    for (const RAPTOR::RouteSegment &segment :
-         data.routesContainingStop(sourceStop)) {
-      const TripId trip = data.getEarliestTrip(segment, sourceDepartureTime);
-      if (trip != noTripId) {
-        enqueue(trip, StopIndex(segment.stopIndex + 1), 0.0);
-      }
-    }
 
-    for (const Edge edge : transferGraph.edgesFrom(sourceStop)) {
-      const Vertex stop = transferGraph.get(ToVertex, edge);
-      const int stopDepartureTime =
-          sourceDepartureTime + transferGraph.get(TravelTime, edge);
+    constexpr double UPPER_LIMIT = 0.8;
+    // how far back we want to look to potentially catch a trip that is late
+    constexpr int LOOKBACK = 2 * 60 * 60;
+
+    auto collectTrips = [&](const StopId stop, const int offsetToStop = 0) {
+      const int stopDepartureTime = sourceDepartureTime + offsetToStop;
+
       for (const RAPTOR::RouteSegment &segment :
-           data.routesContainingStop(StopId(stop))) {
-        const TripId trip = data.getEarliestTrip(segment, stopDepartureTime);
-        if (trip != noTripId) {
-          enqueue(trip, StopIndex(segment.stopIndex + 1), 0.0);
+           data.routesContainingStop(stop)) {
+        TripId trip =
+            data.getEarliestTrip(segment, stopDepartureTime - LOOKBACK);
+        const TripId lastTrip = data.firstTripOfRoute[segment.routeId + 1];
+
+        while (trip < lastTrip) {
+          const StopEventId event =
+              data.getStopEventId(trip, segment.stopIndex);
+          const double prop =
+              (1 - data.raptorData.delayDistribution[event].second.cdf(
+                       stopDepartureTime));
+          const double cost = probabilityToCost(prop);
+
+          if (cost <= maxProbabilityCost) {
+            enqueue(trip, StopIndex(segment.stopIndex + 1), cost);
+          }
+          trip++;
+          if (prop >= UPPER_LIMIT)
+            break;
         }
       }
+    };
+
+    collectTrips(sourceStop);
+
+    for (const Edge edge : transferGraph.edgesFrom(sourceStop)) {
+      const StopId stop = StopId(transferGraph.get(ToVertex, edge));
+      const int transferDuration = transferGraph.get(TravelTime, edge);
+
+      collectTrips(stop, transferDuration);
     }
     profiler.donePhase(PHASE_EVALUATE_INITIAL);
   }
@@ -445,8 +465,4 @@ private:
 
   Profiler profiler;
 };
-
-// fillfirst queue with first-K trips of route until succeess >= 95%
-// in der ersten queue ist dominanz quatsch
-
 } // namespace TripBased
