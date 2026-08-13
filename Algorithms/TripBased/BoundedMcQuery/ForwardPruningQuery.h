@@ -52,9 +52,10 @@ public:
       : data(data), transferGraph(transferGraph),
         reverseTransferGraph(reverseTransferGraph),
         transferFromSource(transferFromSource),
-        transferToTarget(transferToTarget), queue(data.numberOfStopEvents()),
-        edgeRanges(data.numberOfStopEvents()), queueSize(0), reachedIndex(data),
-        stopArrivalTimes(data), targetLabels(1), minArrivalTime(INFTY),
+        transferToTarget(transferToTarget), lastSource(0), lastTarget(0),
+        queue(data.numberOfStopEvents()), edgeRanges(data.numberOfStopEvents()),
+        queueSize(0), reachedIndex(data), stopArrivalTimes(data),
+        targetLabels(1), minArrivalTime(INFTY),
         edgeLabels(data.stopEventGraph.numEdges()), sourceStop(noStop),
         targetStop(noStop), sourceDepartureTime(never), arrivalSlack(INFTY),
         maxTrips(0), profiler(profiler) {

@@ -17,6 +17,8 @@ int main(int argc, char **argv) {
   new IntermediateToRAPTOR(shell);
   new IntermediateToRAPTORRandomDelay(shell);
 
+  new ReverseTripBasedData(shell);
+
   new StochasticStopEventGraphBuilder(shell);
   new PrintTripTransferStats(shell);
 
