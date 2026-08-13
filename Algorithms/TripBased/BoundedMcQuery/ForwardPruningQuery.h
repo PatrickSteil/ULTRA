@@ -247,7 +247,7 @@ private:
   }
 
   inline void addTargetLabel(const int newArrivalTime) noexcept {
-    profiler.countMetric(METRIC_ADD_JOURNEYS);
+    profiler.countMetric(METRIC_FORWARD_ADD_JOURNEYS);
     if (newArrivalTime < targetLabels.back()) {
       targetLabels.back() = newArrivalTime;
       minArrivalTime = (newArrivalTime - sourceDepartureTime) * arrivalSlack +

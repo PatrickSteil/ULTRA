@@ -17,7 +17,8 @@ int main(int argc, char **argv) {
   new IntermediateToRAPTOR(shell);
   new IntermediateToRAPTORRandomDelay(shell);
 
-  new ReverseTripBasedData(shell);
+  new AugmentProbabilityTripBasedShortcuts(shell);
+  // new ReverseTripBasedData(shell);
 
   new StochasticStopEventGraphBuilder(shell);
   new PrintTripTransferStats(shell);
@@ -27,6 +28,7 @@ int main(int argc, char **argv) {
   new RunMCProbabilityQuery(shell);
 
   new RunBoundedMCProbabilityQueries(shell);
+  new RunBoundedMCProbabilityQuery(shell);
 
   shell.run();
   return 0;

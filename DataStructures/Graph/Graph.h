@@ -64,7 +64,6 @@ using DynamicDelayGraph =
 
 using StaticGraphWithProbability =
     StaticGraph<NoVertexAttributes, WithProbability>;
-
 using SimpleDynamicGraphWithProbability =
     DynamicGraph<NoVertexAttributes, WithProbability>;
 using SimpleStaticGraphWithProbability =

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "../../Algorithms/TripBased/BoundedMcQuery/BoundedMcProbabilityQuery.h"
+#include "../../Algorithms/TripBased/Preprocessing/ProbabilityShortcutAugmenter.h"
 #include "../../Algorithms/TripBased/Preprocessing/StopEventGraphBuilderStochastic.h"
 #include "../../Algorithms/TripBased/Query/McProbabilityQuery.h"
 
@@ -400,6 +401,8 @@ public:
     addParameter("Number of queries");
     addParameter("Arrival slack");
     addParameter("Trip slack");
+    addParameter("Min probability (%)", "0");
+    addParameter("Sufficient probability (%)", "0");
   }
 
   virtual void execute() noexcept {
@@ -416,6 +419,14 @@ public:
 
     const double arrivalSlack = getParameter<double>("Arrival slack");
     const double tripSlack = getParameter<double>("Trip slack");
+    const double minProbabilityPercent =
+        getParameter<double>("Min probability (%)");
+    const double sufficientProbabilityPercent =
+        getParameter<double>("Sufficient probability (%)");
+    if (minProbabilityPercent > 0.0)
+      algo.setMinProbability(minProbabilityPercent / 100.0);
+    if (sufficientProbabilityPercent > 0.0)
+      algo.setSufficientProbability(sufficientProbabilityPercent / 100.0);
 
     const size_t n = getParameter<size_t>("Number of queries");
     const std::vector<VertexQuery> queries =
@@ -430,6 +441,102 @@ public:
     algo.getProfiler().printStatistics();
     std::cout << "Avg. journeys: " << String::prettyDouble(numJourneys / n)
               << std::endl;
+  }
+};
+
+// RUN ONE BOUNDED MC PROBABILITY QUERY
+class RunBoundedMCProbabilityQuery : public ParameterizedCommand {
+
+public:
+  RunBoundedMCProbabilityQuery(BasicShell &shell)
+      : ParameterizedCommand(
+            shell, "runBoundedMCProbabilityQuery",
+            "Runs a single Bounded Multi-Criteria Trip-Based query "
+            "maximizing arrival probability, and prints the resulting "
+            "journeys.") {
+    addParameter("Trip-Based input file");
+    addParameter("Bounded forward Trip-Based input file");
+    addParameter("Bounded backward Trip-Based input file");
+    addParameter("Source stop");
+    addParameter("Target stop");
+    addParameter("Departure time");
+    addParameter("Arrival slack");
+    addParameter("Trip slack");
+    addParameter("Min probability (%)", "0");
+    addParameter("Sufficient probability (%)", "0");
+    addParameter("Route similarity threshold", "1.0");
+  }
+
+  virtual void execute() noexcept {
+    const std::string inputFile = getParameter("Trip-Based input file");
+    const std::string forwardBoundedFile =
+        getParameter("Bounded forward Trip-Based input file");
+    const std::string backwardBoundedFile =
+        getParameter("Bounded backward Trip-Based input file");
+    const StopId source = StopId(getParameter<size_t>("Source stop"));
+    const StopId target = StopId(getParameter<size_t>("Target stop"));
+    const int departureTime = getParameter<int>("Departure time");
+    const double arrivalSlack = getParameter<double>("Arrival slack");
+    const double tripSlack = getParameter<double>("Trip slack");
+    const double minProbabilityPercent =
+        getParameter<double>("Min probability (%)");
+    const double sufficientProbabilityPercent =
+        getParameter<double>("Sufficient probability (%)");
+    const double similarityThreshold =
+        getParameter<double>("Route similarity threshold");
+
+    TripBased::Data tripBasedData(inputFile);
+    tripBasedData.printInfo();
+    TripBased::Data forwardBoundedData(forwardBoundedFile);
+    forwardBoundedData.printInfo();
+    TripBased::Data backwardBoundedData(backwardBoundedFile);
+    backwardBoundedData.printInfo();
+
+    TripBased::BoundedMcProbabilityQuery<TripBased::AggregateProfiler> algo(
+        tripBasedData, forwardBoundedData, backwardBoundedData);
+    if (minProbabilityPercent > 0.0)
+      algo.setMinProbability(minProbabilityPercent / 100.0);
+    if (sufficientProbabilityPercent > 0.0)
+      algo.setSufficientProbability(sufficientProbabilityPercent / 100.0);
+
+    algo.run(source, departureTime, target, arrivalSlack, tripSlack);
+
+    algo.getProfiler().printStatistics();
+    const auto journeys = algo.getJourneys();
+    const auto paretoFront = algo.getResults();
+
+    const std::vector<size_t> diverseIndices =
+        TripBased::selectDiverseJourneys(journeys, similarityThreshold);
+
+    std::cout << "Found " << journeys.size() << " Pareto-optimal journeys, "
+              << diverseIndices.size()
+              << " after route-diversity filtering (threshold "
+              << similarityThreshold << "):" << std::endl;
+    for (const size_t i : diverseIndices) {
+      std::cout << "Journey: " << (int)i
+                << ", ArrTime: " << (int)paretoFront[i].arrivalTime
+                << ", Nr Trips: " << (int)paretoFront[i].numberOfTrips
+                << ", Prob: " << (paretoFront[i].probability() * 100.0)
+                << " %\n";
+      const auto &j = journeys[i];
+      for (const auto &leg : j) {
+        std::cout << "from: " << leg.from << ", to: " << leg.to
+                  << ", dep-Time: " << leg.departureTime
+                  << ", arr-Time: " << leg.arrivalTime;
+        if (leg.usesRoute) {
+          std::cout << ", route: " << leg.routeId << "\n";
+        } else {
+          std::cout << ", transfer: " << leg.routeId << " ("
+                    << (Edge(leg.routeId) != noEdge
+                            ? (tripBasedData.stopEventGraph.get(
+                                   Probability, Edge(leg.routeId)) *
+                               100.0)
+                            : 100.0)
+                    << " %)\n";
+        }
+      }
+      std::cout << std::endl;
+    }
   }
 };
 
@@ -503,5 +610,36 @@ public:
       }
       std::cout << std::endl;
     }
+  }
+};
+
+class AugmentProbabilityTripBasedShortcuts : public ParameterizedCommand {
+
+public:
+  AugmentProbabilityTripBasedShortcuts(BasicShell &shell)
+      : ParameterizedCommand(shell, "augmentProbabilityTripBasedShortcuts",
+                             "Augments Probability Trip-Based shortcuts for "
+                             "bounded multicriteria search.") {
+    addParameter("Input file");
+    addParameter("Forward output file");
+    addParameter("Backward output file");
+    addParameter("Remove superfluous shortcuts?");
+    addParameter("Trip limit", "1073741823");
+  }
+
+  virtual void execute() noexcept {
+    TripBased::Data data(getParameter("Input file"));
+    data.printInfo();
+    TripBased::Data reverseData = data.reverseNetwork();
+    TripBased::ProbabilityShortcutAugmenter augmenter;
+    const size_t tripLimit = getParameter<size_t>("Trip limit");
+    augmenter.augmentShortcuts(data, tripLimit);
+    augmenter.augmentShortcuts(reverseData, tripLimit);
+    if (getParameter<bool>("Remove superfluous shortcuts?")) {
+      augmenter.removeSuperfluousShortcuts(data);
+      augmenter.removeSuperfluousShortcuts(reverseData);
+    }
+    data.serialize(getParameter("Forward output file"));
+    reverseData.serialize(getParameter("Backward output file"));
   }
 };

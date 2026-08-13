@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include "../../../DataStructures/RAPTOR/Entities/ArrivalLabel.h"
 #include "../../../DataStructures/RAPTOR/Entities/Bags.h"
 #include "../../../DataStructures/TripBased/Data.h"
@@ -132,14 +134,32 @@ public:
       offsets[stopEvent] = hasPreviousTrip ? data.numberOfStopsInTrip(trip) : 0;
     }
     profiler.registerPhases({PHASE_FORWARD, PHASE_BACKWARD, PHASE_MAIN});
-    profiler.registerMetrics({METRIC_ROUNDS, METRIC_SCANNED_TRIPS,
-                              METRIC_SCANNED_STOPS, METRIC_ENQUEUES,
-                              METRIC_ADD_JOURNEYS});
+    profiler.registerMetrics(
+        {METRIC_ROUNDS, METRIC_SCANNED_TRIPS, METRIC_SCANNED_STOPS,
+         METRIC_ENQUEUES, METRIC_ADD_JOURNEYS, METRIC_FORWARD_ADD_JOURNEYS});
   }
 
   inline void setMinProbability(const double pMin) noexcept {
     maxProbabilityCost = (pMin <= 0.0) ? std::numeric_limits<double>::infinity()
                                        : probabilityToCost(pMin);
+  }
+
+  // For a given number of trips, the target bag stores a Pareto front of
+  // journeys trading off arrival time against success probability. The
+  // fastest ("main") journey of that round is the one with the earliest
+  // arrival time, which -- being Pareto-optimal -- is also the one with the
+  // lowest success probability in that round.
+  // If that fastest journey already reaches at least pSufficient success
+  // probability, there is no point keeping the slower-but-more-probable
+  // alternatives of the same round, since the fastest one is already "safe
+  // enough". If it does not, we keep looking at the next slower alternative
+  // (which is more probable), and so on, until either an alternative reaches
+  // pSufficient or we run out of alternatives.
+  // Setting pSufficient to 0 (the default) disables this bound and keeps the
+  // full Pareto front for every round, matching the previous behavior.
+  inline void setSufficientProbability(const double pSufficient) noexcept {
+    boundJourneysByProbability = (pSufficient > 0.0);
+    sufficientProbabilityCost = probabilityToCost(pSufficient);
   }
 
   inline void run(const StopId source, const int departureTime,
@@ -167,6 +187,7 @@ public:
 
     profiler.startPhase();
     computeInitialAndFinalTransfers();
+    boundRoundBag(targetBags[0]);
     evaluateInitialTransfers();
     scanTrips();
     profiler.donePhase(PHASE_MAIN);
@@ -328,6 +349,9 @@ private:
           addTargetLabel(targetLabel);
         }
       }
+      // This round's target bag is now complete: drop the alternatives that
+      // are no longer needed given the fastest journey's probability.
+      boundRoundBag(targetBags.back());
       // Find the range of transfers for each trip
       for (size_t i = roundBegin; i < roundEnd; i++) {
         TripLabel &label = queue[i];
@@ -390,6 +414,27 @@ private:
     queue.emplace_back(label.stopEvent, end, probabilityCost, parent);
     probabilityCostData.update(label.stopEvent, label.tripEnd, label.routeEnd,
                                label.tripLength, probabilityCost);
+  }
+
+  // Trims a round's target bag down to the alternatives that are actually
+  // needed, based on setSufficientProbability(). No-op if that bound is
+  // disabled (the default) or the bag has at most one label anyway.
+  inline void boundRoundBag(TargetBag &bag) const noexcept {
+    if (!boundJourneysByProbability || bag.size() <= 1)
+      return;
+    // The bag is a Pareto front of (arrivalTime, probabilityCost): sorting
+    // by arrival time ascending also sorts probabilityCost descending, i.e.
+    // from the fastest/least-probable to the slowest/most-probable journey.
+    std::sort(bag.labels.begin(), bag.labels.end(),
+              [](const TargetLabel &a, const TargetLabel &b) {
+                return a.arrivalTime < b.arrivalTime;
+              });
+    size_t keep = 1;
+    while (keep < bag.labels.size() &&
+           bag.labels[keep - 1].probabilityCost > sufficientProbabilityCost) {
+      keep++;
+    }
+    bag.resize(keep);
   }
 
   inline void addTargetLabel(const TargetLabel &newLabel) noexcept {
@@ -509,6 +554,8 @@ private:
   std::vector<u_int8_t> offsets;
 
   double maxProbabilityCost = std::numeric_limits<double>::infinity();
+  bool boundJourneysByProbability = false;
+  double sufficientProbabilityCost = std::numeric_limits<double>::infinity();
 
   StopId sourceStop;
   StopId targetStop;
