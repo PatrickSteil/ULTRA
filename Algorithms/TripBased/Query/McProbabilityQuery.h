@@ -59,7 +59,8 @@ private:
 
     inline bool dominates(const TargetLabel &other) const noexcept {
       return arrivalTime <= other.arrivalTime &&
-             probabilityCost <= other.probabilityCost;
+             ProbabilityCostData::costLessEqual(probabilityCost,
+                                                other.probabilityCost);
     }
 
     int arrivalTime;
@@ -267,18 +268,20 @@ private:
         profiler.countMetric(METRIC_SCANNED_TRIPS);
         for (StopEventId j(label.begin + 1); j < label.end; j++) {
           const double probabilityCost = probabilityCostData(j);
-          if (probabilityCost < label.probabilityCost) {
+          if (ProbabilityCostData::costLess(probabilityCost,
+                                            label.probabilityCost)) {
             label.end = j;
-          } else {
-            if (probabilityCost == label.probabilityCost && offsets[j] != 0) {
-              const u_int8_t offset = offsets[j];
-              for (; j < label.end; j++) {
-                if (probabilityCostData(StopEventId(j - offset)) ==
-                    label.probabilityCost)
-                  label.end = j;
-              }
-              break;
+          } else if (ProbabilityCostData::costEqual(probabilityCost,
+                                                    label.probabilityCost) &&
+                     offsets[j] != 0) {
+            const u_int8_t offset = offsets[j];
+            for (; j < label.end; j++) {
+              if (ProbabilityCostData::costEqual(
+                      probabilityCostData(StopEventId(j - offset)),
+                      label.probabilityCost))
+                label.end = j;
             }
+            break;
           }
         }
       }
@@ -326,7 +329,8 @@ private:
     profiler.countMetric(METRIC_ENQUEUES);
     const TripInfo &info = tripInfo[trip];
     const StopEventId stopEvent = StopEventId(info.tripStart + index);
-    if (probabilityCost >= probabilityCostData(stopEvent))
+    if (!ProbabilityCostData::costLess(probabilityCost,
+                                       probabilityCostData(stopEvent)))
       return;
 
     assert(StopEventId(stopEvent + 1) <= info.tripEnd);
@@ -342,7 +346,8 @@ private:
     profiler.countMetric(METRIC_ENQUEUES);
     const EdgeLabel &label = edgeLabels[edge];
     probabilityCost += label.probabilityCost;
-    if (probabilityCost >= probabilityCostData(label.stopEvent))
+    if (!ProbabilityCostData::costLess(probabilityCost,
+                                       probabilityCostData(label.stopEvent)))
       return;
     assert(StopEventId(label.stopEvent + 1) <= label.tripEnd);
     const StopEventId end = probabilityCostData.getScanEnd(
