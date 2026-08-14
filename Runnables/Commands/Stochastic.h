@@ -17,175 +17,9 @@
 
 #include "../../Shell/Shell.h"
 
+#include "StochasticHelper.h"
+
 using namespace Shell;
-
-namespace TripBased {
-
-inline void printTripTransferStats(const Data &data, const TripId trip,
-                                   std::ostream &os = std::cout) {
-  const size_t numStops = data.numberOfStopsInTrip(trip);
-  const StopId *stops = data.stopArrayOfTrip(trip);
-
-  os << "=== Transfer stats for trip " << size_t(trip) << " ===\n";
-  os << "Route: " << size_t(data.routeOfTrip[trip])
-     << " | stops in trip: " << numStops << "\n";
-
-  size_t totalTransfers = 0;
-  double probSum = 0.0;
-  double probMin = 1.0, probMax = 0.0;
-  std::vector<double> allProbs;
-
-  for (StopIndex i = StopIndex(0); i < numStops; i++) {
-    const StopEventId fromEvent = data.getStopEventId(trip, i);
-    const GaussianDist &arrival =
-        data.raptorData.delayDistribution[fromEvent].first;
-
-    size_t degree = data.stopEventGraph.outDegree(Vertex(fromEvent));
-    if (degree == 0)
-      continue;
-
-    os << "\n-- stop index " << size_t(i) << " (stop=" << size_t(stops[i])
-       << ", event=" << size_t(fromEvent) << ", arrival mean=" << arrival.mean()
-       << ", sigma=" << arrival.stddev() << ") --\n";
-    os << "  outgoing transfers: " << degree << "\n";
-
-    for (const Edge e : data.stopEventGraph.edgesFrom(Vertex(fromEvent))) {
-      const StopEventId toEvent =
-          StopEventId(data.stopEventGraph.get(ToVertex, e));
-      const TripId toTrip = data.tripOfStopEvent[toEvent];
-      const StopIndex toIndex = data.indexOfStopEvent[toEvent];
-      const RouteId toRoute = data.routeOfTrip[toTrip];
-      const StopId toStop = data.stopArrayOfTrip(toTrip)[toIndex];
-
-      const GaussianDist &departure =
-          data.raptorData.delayDistribution[toEvent].second;
-
-      // Recover walk time: 0 if same stop, else look up the footpath edge.
-      double walkTime = 0.0;
-      bool footpathFound = (toStop == stops[i]);
-      if (!footpathFound) {
-        for (const Edge fe :
-             data.raptorData.transferGraph.edgesFrom(stops[i])) {
-          if (StopId(data.raptorData.transferGraph.get(ToVertex, fe)) ==
-              toStop) {
-            walkTime = data.raptorData.transferGraph.get(TravelTime, fe);
-            footpathFound = true;
-            break;
-          }
-        }
-      }
-
-      const double rho = data.raptorData.getCorrelation(fromEvent, toEvent);
-      const double p = data.stopEventGraph.get(Probability, e);
-      // transferFeasibilityProbability(arrival, departure, rho, walkTime);
-
-      totalTransfers++;
-      probSum += p;
-      probMin = std::min(probMin, p);
-      probMax = std::max(probMax, p);
-      allProbs.push_back(p);
-
-      os << "   -> event " << size_t(toEvent) << " | trip=" << size_t(toTrip)
-         << " | route=" << size_t(toRoute) << " | toStop=" << size_t(toStop)
-         << " | walkTime=" << walkTime
-         << (footpathFound ? "" : " (unresolved!)") << " | rho=" << rho
-         << " | departure mean=" << departure.mean()
-         << " | sigma=" << departure.stddev() << " | p(feasible)=" << p << "\n";
-    }
-  }
-
-  os << "\n=== Summary ===\n";
-  os << "Total outgoing transfers: " << totalTransfers << "\n";
-  if (totalTransfers > 0) {
-    os << "Mean p(feasible):   " << (probSum / totalTransfers) << "\n";
-    os << "Min p(feasible):    " << probMin << "\n";
-    os << "Max p(feasible):    " << probMax << "\n";
-
-    std::sort(allProbs.begin(), allProbs.end());
-    auto percentile = [&](double q) {
-      const size_t idx = static_cast<size_t>(q * (allProbs.size() - 1));
-      return allProbs[idx];
-    };
-    os << "Median p(feasible): " << percentile(0.5) << "\n";
-    os << "p10 p(feasible):    " << percentile(0.10) << "\n";
-    os << "p90 p(feasible):    " << percentile(0.90) << "\n";
-  } else {
-    os << "(no outgoing transfers found for this trip)\n";
-  }
-}
-
-// --- journey diversity ------------------------------------------------
-// The ordered list of route ids a journey uses (transfer legs are
-// skipped). Two journeys that "take the same routes, just later" end up
-// with identical or near-identical signatures.
-inline std::vector<RouteId>
-routeSignature(const RAPTOR::Journey &journey) noexcept {
-  std::vector<RouteId> signature;
-  for (const auto &leg : journey) {
-    if (leg.usesRoute)
-      signature.push_back(RouteId(leg.routeId));
-  }
-  return signature;
-}
-
-// Set-based (order-agnostic) similarity: |A ∩ B| / |A ∪ B|. 1.0 means the
-// two journeys use exactly the same set of routes; 0.0 means they share
-// none. Two empty signatures (e.g. two direct-walk journeys) are treated
-// as identical.
-inline double jaccardSimilarity(const std::vector<RouteId> &a,
-                                const std::vector<RouteId> &b) noexcept {
-  const std::set<RouteId> A(a.begin(), a.end());
-  const std::set<RouteId> B(b.begin(), b.end());
-  if (A.empty() && B.empty())
-    return 1.0;
-  size_t intersectionSize = 0;
-  for (const RouteId &route : A) {
-    if (B.count(route) > 0)
-      intersectionSize++;
-  }
-  const size_t unionSize = A.size() + B.size() - intersectionSize;
-  if (unionSize == 0)
-    return 1.0;
-  return static_cast<double>(intersectionSize) / static_cast<double>(unionSize);
-}
-
-// Greedily keeps journeys in the given order, dropping any journey whose
-// route signature is at least `similarityThreshold` similar (Jaccard) to
-// one already kept.
-//   similarityThreshold == 1.0  -> only exact-signature duplicates are
-//                                  removed ("same lines, later departure").
-//   similarityThreshold  < 1.0  -> also merges journeys that mostly, but
-//                                  not entirely, overlap in which routes
-//                                  they use.
-// `journeys` should already be sorted by preference (e.g. by probability
-// or arrival time), since the first journey encountered for a given
-// "cluster" of similar signatures is the one that gets kept.
-inline std::vector<size_t>
-selectDiverseJourneys(const std::vector<RAPTOR::Journey> &journeys,
-                      const double similarityThreshold = 1.0) noexcept {
-  std::vector<size_t> kept;
-  std::vector<std::vector<RouteId>> keptSignatures;
-  kept.reserve(journeys.size());
-  keptSignatures.reserve(journeys.size());
-  for (size_t i = 0; i < journeys.size(); i++) {
-    const std::vector<RouteId> signature = routeSignature(journeys[i]);
-    bool tooSimilar = false;
-    for (const std::vector<RouteId> &keptSignature : keptSignatures) {
-      if (jaccardSimilarity(signature, keptSignature) >= similarityThreshold) {
-        tooSimilar = true;
-        break;
-      }
-    }
-    if (!tooSimilar) {
-      kept.push_back(i);
-      keptSignatures.push_back(signature);
-    }
-  }
-  return kept;
-}
-// ------------------------------------------------------------------------
-
-} // namespace TripBased
 
 class IntermediateToRAPTORRandomDelay : public ParameterizedCommand {
 
@@ -294,7 +128,7 @@ public:
     TripBased::Data data(inputFile);
 
     const TripId trip = TripId(tripIdValue);
-    TripBased::printTripTransferStats(data, trip);
+    printTripTransferStats(data, trip);
   }
 };
 
@@ -336,6 +170,17 @@ public:
     journeyCounts.reserve(numQueries);
     diverseJourneyCounts.reserve(numQueries);
 
+    // new: diagnostics for (4)
+    std::vector<double> avgPairwiseJaccardPerQuery;
+    std::vector<size_t> maxSharedPrefixLegsPerQuery;
+    std::vector<double> maxSharedPrefixMinutesPerQuery;
+    std::vector<size_t> maxSharedSuffixLegsPerQuery;
+    std::vector<double> maxSharedSuffixMinutesPerQuery;
+    std::vector<int> departureSpreadPerQuery;
+    std::vector<int> arrivalSpreadPerQuery;
+    std::vector<size_t> distinctTransferStopsPerQuery;
+    DiversityThresholdSweep sweep;
+
     const std::vector<StopQuery> queries =
         generateRandomStopQueries(data.numberOfStops(), numQueries);
 
@@ -343,12 +188,29 @@ public:
       algo.run(query.source, query.departureTime, query.target);
       const auto journeys = algo.getJourneys();
       const std::vector<size_t> diverseIndices =
-          TripBased::selectDiverseJourneys(journeys, similarityThreshold);
+          selectDiverseJourneys(journeys, similarityThreshold);
 
       numJourneys += journeys.size();
       numDiverseJourneys += diverseIndices.size();
       journeyCounts.push_back(journeys.size());
       diverseJourneyCounts.push_back(diverseIndices.size());
+
+      // new: skip queries with < 2 kept journeys, nothing pairwise to say
+      if (!journeys.empty()) {
+        const DiversityDiagnostics diag =
+            computeDiversityDiagnostics(journeys, diverseIndices);
+        if (diverseIndices.size() >= 2) {
+          avgPairwiseJaccardPerQuery.push_back(diag.avgPairwiseJaccard);
+          maxSharedPrefixLegsPerQuery.push_back(diag.maxSharedPrefixLegs);
+          maxSharedPrefixMinutesPerQuery.push_back(diag.maxSharedPrefixMinutes);
+          maxSharedSuffixLegsPerQuery.push_back(diag.maxSharedSuffixLegs);
+          maxSharedSuffixMinutesPerQuery.push_back(diag.maxSharedSuffixMinutes);
+        }
+        departureSpreadPerQuery.push_back(diag.departureSpreadSeconds);
+        arrivalSpreadPerQuery.push_back(diag.arrivalSpreadSeconds);
+        distinctTransferStopsPerQuery.push_back(diag.distinctTransferStops);
+        sweep.addQuery(journeys);
+      }
     }
 
     algo.getProfiler().printStatistics();
@@ -370,11 +232,31 @@ public:
 
     printDistribution("Journeys per query", journeyCounts);
     printDistribution("Diverse journeys per query", diverseJourneyCounts);
+
+    // new: print diagnostics
+    std::cout << "\n--- Diversity diagnostics (kept/diverse journeys) ---\n";
+    printDistribution("Avg. pairwise route-Jaccard (queries w/ >=2 kept)",
+                      avgPairwiseJaccardPerQuery);
+    printDistribution("Max shared-prefix legs (queries w/ >=2 kept)",
+                      maxSharedPrefixLegsPerQuery);
+    printDistribution("Max shared-prefix minutes (queries w/ >=2 kept)",
+                      maxSharedPrefixMinutesPerQuery);
+    printDistribution("Max shared-suffix legs (queries w/ >=2 kept)",
+                      maxSharedSuffixLegsPerQuery);
+    printDistribution("Max shared-suffix minutes (queries w/ >=2 kept)",
+                      maxSharedSuffixMinutesPerQuery);
+    printDistribution("Departure time spread (s)", departureSpreadPerQuery);
+    printDistribution("Arrival time spread (s)", arrivalSpreadPerQuery);
+    printDistribution("Distinct transfer stops used",
+                      distinctTransferStopsPerQuery);
+    std::cout << std::endl;
+    sweep.print();
   }
 
 private:
+  template <typename T>
   inline void printDistribution(const std::string &label,
-                                std::vector<size_t> values) const noexcept {
+                                std::vector<T> values) const noexcept {
     if (values.empty())
       return;
     std::sort(values.begin(), values.end());
@@ -506,7 +388,7 @@ public:
     const auto paretoFront = algo.getResults();
 
     const std::vector<size_t> diverseIndices =
-        TripBased::selectDiverseJourneys(journeys, similarityThreshold);
+        selectDiverseJourneys(journeys, similarityThreshold);
 
     std::cout << "Found " << journeys.size() << " Pareto-optimal journeys, "
               << diverseIndices.size()
@@ -579,7 +461,7 @@ public:
     const auto paretoFront = algo.getResults();
 
     const std::vector<size_t> diverseIndices =
-        TripBased::selectDiverseJourneys(journeys, similarityThreshold);
+        selectDiverseJourneys(journeys, similarityThreshold);
 
     std::cout << "Found " << journeys.size() << " Pareto-optimal journeys, "
               << diverseIndices.size()
