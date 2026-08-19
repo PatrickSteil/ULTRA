@@ -26,6 +26,7 @@ int main(int argc, char **argv) {
   new ApplyBoundingBox(shell);
   new ApplyCustomBoundingBox(shell);
   new MakeOneHopTransfers(shell);
+  new MakeOneHopTransfersByGeoDistance(shell);
   new ApplyMaxTransferSpeed(shell);
   new ApplyConstantTransferSpeed(shell);
   shell.run();

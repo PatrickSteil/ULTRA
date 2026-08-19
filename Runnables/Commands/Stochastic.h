@@ -283,8 +283,6 @@ public:
     addParameter("Number of queries");
     addParameter("Arrival slack");
     addParameter("Trip slack");
-    addParameter("Min probability (%)", "0");
-    addParameter("Sufficient probability (%)", "0");
   }
 
   virtual void execute() noexcept {
@@ -301,15 +299,6 @@ public:
 
     const double arrivalSlack = getParameter<double>("Arrival slack");
     const double tripSlack = getParameter<double>("Trip slack");
-    const double minProbabilityPercent =
-        getParameter<double>("Min probability (%)");
-    const double sufficientProbabilityPercent =
-        getParameter<double>("Sufficient probability (%)");
-    if (minProbabilityPercent > 0.0)
-      algo.setMinProbability(minProbabilityPercent / 100.0);
-    if (sufficientProbabilityPercent > 0.0)
-      algo.setSufficientProbability(sufficientProbabilityPercent / 100.0);
-
     const size_t n = getParameter<size_t>("Number of queries");
     const std::vector<VertexQuery> queries =
         generateRandomVertexQueries(tripBasedData.numberOfStops(), n);
@@ -344,8 +333,6 @@ public:
     addParameter("Departure time");
     addParameter("Arrival slack");
     addParameter("Trip slack");
-    addParameter("Min probability (%)", "0");
-    addParameter("Sufficient probability (%)", "0");
     addParameter("Route similarity threshold", "1.0");
   }
 
@@ -360,10 +347,6 @@ public:
     const int departureTime = getParameter<int>("Departure time");
     const double arrivalSlack = getParameter<double>("Arrival slack");
     const double tripSlack = getParameter<double>("Trip slack");
-    const double minProbabilityPercent =
-        getParameter<double>("Min probability (%)");
-    const double sufficientProbabilityPercent =
-        getParameter<double>("Sufficient probability (%)");
     const double similarityThreshold =
         getParameter<double>("Route similarity threshold");
 
@@ -376,10 +359,6 @@ public:
 
     TripBased::BoundedMcProbabilityQuery<TripBased::AggregateProfiler> algo(
         tripBasedData, forwardBoundedData, backwardBoundedData);
-    if (minProbabilityPercent > 0.0)
-      algo.setMinProbability(minProbabilityPercent / 100.0);
-    if (sufficientProbabilityPercent > 0.0)
-      algo.setSufficientProbability(sufficientProbabilityPercent / 100.0);
 
     algo.run(source, departureTime, target, arrivalSlack, tripSlack);
 

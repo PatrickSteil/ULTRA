@@ -8,6 +8,8 @@
 #include "ReachedIndexRounds.h"
 #include "StopArrivalTimes.h"
 
+#include <iostream>
+
 namespace TripBased {
 
 template <typename PROFILER = NoProfiler> class BackwardPruningQuery {
@@ -114,6 +116,23 @@ public:
     return stopArrivalTimes(stop, round);
   }
 
+  inline void printDepartureTimes() const noexcept {
+    std::cout << "  Anchor labels (numberOfTrips -> arrivalTime):" << std::endl;
+    for (const RAPTOR::ArrivalLabel &label :
+         forwardPruningQuery.getAnchorLabels()) {
+      std::cout << "    " << label.numberOfTrips << " -> " << label.arrivalTime
+                << std::endl;
+    }
+    std::cout << "  departureTimes[budget] -> deadline (maxTrips=" << maxTrips
+              << "):" << std::endl;
+    for (size_t i = 0; i < departureTimes.size(); i++) {
+      std::cout << "    budget=" << i << " -> "
+                << (departureTimes[i] >= INFTY ? -1 : -departureTimes[i])
+                << (departureTimes[i] >= INFTY ? " (UNFILLED/INFTY)" : "")
+                << std::endl;
+    }
+  }
+
   inline TripId getReverseTrip(const RouteId route,
                                const size_t tripOffset) const noexcept {
     return TripId(data.firstTripOfRoute[route + 1] - tripOffset - 1);
@@ -152,10 +171,14 @@ private:
   }
 
   inline void evaluateInitialTransfers() noexcept {
+    // This search runs backward starting at sourceStop (the real target), so
+    // the "direct board" and "walk then board" cases both need to look
+    // around sourceStop, not targetStop (the real source, which is where
+    // this search is trying to end up).
     for (const RAPTOR::RouteSegment &segment :
-         data.routesContainingStop(targetStop)) {
+         data.routesContainingStop(sourceStop)) {
       const int arrivalTime =
-          forwardPruningQuery.getArrivalTime(targetStop, maxTrips - round);
+          forwardPruningQuery.getArrivalTime(sourceStop, maxTrips - round);
       if (-sourceDepartureTime < arrivalTime)
         continue;
 
@@ -164,7 +187,7 @@ private:
         enqueue(trip, StopIndex(segment.stopIndex + 1));
       }
     }
-    for (const Edge edge : reverseTransferGraph.edgesFrom(targetStop)) {
+    for (const Edge edge : reverseTransferGraph.edgesFrom(sourceStop)) {
       const Vertex stop = reverseTransferGraph.get(ToVertex, edge);
       const int stopDepartureTime =
           sourceDepartureTime + reverseTransferGraph.get(TravelTime, edge);

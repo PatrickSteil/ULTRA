@@ -1,6 +1,6 @@
 #pragma once
 
-#include <algorithm>
+#include <iostream>
 
 #include "../../../DataStructures/RAPTOR/Entities/ArrivalLabel.h"
 #include "../../../DataStructures/RAPTOR/Entities/Bags.h"
@@ -82,8 +82,7 @@ public:
       : data(data), transferGraph(data.getTransferGraph()),
         reverseTransferGraph(transferGraph),
         transferFromSource(data.numberOfStops(), INFTY),
-        transferToTarget(data.numberOfStops(), INFTY), lastSource(0),
-        lastTarget(0),
+        transferToTarget(data.numberOfStops(), INFTY),
         forwardPruningQuery(forwardBoundedData, transferGraph,
                             reverseTransferGraph, transferFromSource,
                             transferToTarget, profiler),
@@ -139,29 +138,6 @@ public:
          METRIC_ENQUEUES, METRIC_ADD_JOURNEYS, METRIC_FORWARD_ADD_JOURNEYS});
   }
 
-  inline void setMinProbability(const double pMin) noexcept {
-    maxProbabilityCost = (pMin <= 0.0) ? std::numeric_limits<double>::infinity()
-                                       : probabilityToCost(pMin);
-  }
-
-  // For a given number of trips, the target bag stores a Pareto front of
-  // journeys trading off arrival time against success probability. The
-  // fastest ("main") journey of that round is the one with the earliest
-  // arrival time, which -- being Pareto-optimal -- is also the one with the
-  // lowest success probability in that round.
-  // If that fastest journey already reaches at least pSufficient success
-  // probability, there is no point keeping the slower-but-more-probable
-  // alternatives of the same round, since the fastest one is already "safe
-  // enough". If it does not, we keep looking at the next slower alternative
-  // (which is more probable), and so on, until either an alternative reaches
-  // pSufficient or we run out of alternatives.
-  // Setting pSufficient to 0 (the default) disables this bound and keeps the
-  // full Pareto front for every round, matching the previous behavior.
-  inline void setSufficientProbability(const double pSufficient) noexcept {
-    boundJourneysByProbability = (pSufficient > 0.0);
-    sufficientProbabilityCost = probabilityToCost(pSufficient);
-  }
-
   inline void run(const StopId source, const int departureTime,
                   const StopId target, const double arrivalSlack,
                   const double tripSlack) noexcept {
@@ -187,7 +163,6 @@ public:
 
     profiler.startPhase();
     computeInitialAndFinalTransfers();
-    boundRoundBag(targetBags[0]);
     evaluateInitialTransfers();
     scanTrips();
     profiler.donePhase(PHASE_MAIN);
@@ -255,39 +230,30 @@ private:
   }
 
   inline void computeInitialAndFinalTransfers() noexcept {
-    profiler.startPhase();
-    transferFromSource[lastSource] = INFTY;
-    for (const Edge edge : transferGraph.edgesFrom(lastSource)) {
-      const Vertex stop = transferGraph.get(ToVertex, edge);
-      transferFromSource[stop] = INFTY;
+    // forwardPruningQuery.run() (called just before this) already recomputed
+    // transferFromSource/transferToTarget for the current source/target pair
+    // via its own computeInitialAndFinalTransfers(), since both vectors are
+    // held by reference and shared with it. All that is left to do here is
+    // register the direct source->target connection (walking only, so it
+    // has probability cost 0) as a target label of our own.
+    if (transferToTarget[sourceStop] != INFTY) {
+      addTargetLabel(
+          TargetLabel(sourceDepartureTime + transferToTarget[sourceStop], 0.0));
     }
-    transferToTarget[lastTarget] = INFTY;
-    for (const Edge edge : reverseTransferGraph.edgesFrom(lastTarget)) {
-      const Vertex stop = reverseTransferGraph.get(ToVertex, edge);
-      transferToTarget[stop] = INFTY;
-    }
-    transferFromSource[sourceStop] = 0;
-    for (const Edge edge : transferGraph.edgesFrom(sourceStop)) {
-      const Vertex stop = transferGraph.get(ToVertex, edge);
-      transferFromSource[stop] = transferGraph.get(TravelTime, edge);
-    }
-    transferToTarget[targetStop] = 0;
-    if (sourceStop == targetStop)
-      addTargetLabel(TargetLabel(sourceDepartureTime, 0.0));
-    for (const Edge edge : reverseTransferGraph.edgesFrom(targetStop)) {
-      const Vertex stop = reverseTransferGraph.get(ToVertex, edge);
-      if (stop == sourceStop)
-        addTargetLabel(TargetLabel(
-            sourceDepartureTime + reverseTransferGraph.get(TravelTime, edge),
-            0.0));
-      transferToTarget[stop] = reverseTransferGraph.get(TravelTime, edge);
-    }
-    lastSource = sourceStop;
-    lastTarget = targetStop;
-    profiler.donePhase(PHASE_SCAN_INITIAL);
   }
 
   inline void evaluateInitialTransfers() noexcept {
+    for (const RAPTOR::RouteSegment &segment :
+         data.routesContainingStop(sourceStop)) {
+      const int arrivalTime =
+          -backwardPruningQuery.getArrivalTime(sourceStop, maxTrips);
+      if (sourceDepartureTime > arrivalTime)
+        continue;
+      const TripId trip = data.getEarliestTrip(segment, sourceDepartureTime);
+      if (trip != noTripId) {
+        enqueue(trip, StopIndex(segment.stopIndex + 1), 0.0);
+      }
+    }
     for (const Edge edge : transferGraph.edgesFrom(sourceStop)) {
       const Vertex stop = transferGraph.get(ToVertex, edge);
       const int stopDepartureTime =
@@ -342,16 +308,14 @@ private:
             continue;
           const int arrivalTime =
               data.arrivalEvents[j].arrivalTime + timeToTarget;
-          if (arrivalTime > -backwardPruningQuery.getDepartureTime(
-                                maxTrips - currentNumberOfTrips()))
+          const int deadline = -backwardPruningQuery.getDepartureTime(
+              maxTrips - currentNumberOfTrips());
+          if (arrivalTime > deadline)
             continue;
           const TargetLabel targetLabel(arrivalTime, label.probabilityCost, i);
           addTargetLabel(targetLabel);
         }
       }
-      // This round's target bag is now complete: drop the alternatives that
-      // are no longer needed given the fastest journey's probability.
-      boundRoundBag(targetBags.back());
       // Find the range of transfers for each trip
       for (size_t i = roundBegin; i < roundEnd; i++) {
         TripLabel &label = queue[i];
@@ -391,6 +355,7 @@ private:
             info.reverseTrip, maxTrips - currentNumberOfTrips()) >
         reverseStopIndex)
       return;
+
     const StopEventId end = probabilityCostData.getScanEnd(
         StopEventId(stopEvent + 1), info.tripEnd, probabilityCost);
     queue.emplace_back(stopEvent, end, probabilityCost);
@@ -416,31 +381,7 @@ private:
                                label.tripLength, probabilityCost);
   }
 
-  // Trims a round's target bag down to the alternatives that are actually
-  // needed, based on setSufficientProbability(). No-op if that bound is
-  // disabled (the default) or the bag has at most one label anyway.
-  inline void boundRoundBag(TargetBag &bag) const noexcept {
-    if (!boundJourneysByProbability || bag.size() <= 1)
-      return;
-    // The bag is a Pareto front of (arrivalTime, probabilityCost): sorting
-    // by arrival time ascending also sorts probabilityCost descending, i.e.
-    // from the fastest/least-probable to the slowest/most-probable journey.
-    std::sort(bag.labels.begin(), bag.labels.end(),
-              [](const TargetLabel &a, const TargetLabel &b) {
-                return a.arrivalTime < b.arrivalTime;
-              });
-    size_t keep = 1;
-    while (keep < bag.labels.size() &&
-           bag.labels[keep - 1].probabilityCost > sufficientProbabilityCost) {
-      keep++;
-    }
-    bag.resize(keep);
-  }
-
   inline void addTargetLabel(const TargetLabel &newLabel) noexcept {
-    // hard limit
-    if (newLabel.probabilityCost > maxProbabilityCost)
-      return;
     profiler.countMetric(METRIC_ADD_JOURNEYS);
     if (!bestTargetBag.merge(newLabel))
       return;
@@ -537,8 +478,6 @@ private:
   TransferGraph reverseTransferGraph;
   std::vector<int> transferFromSource;
   std::vector<int> transferToTarget;
-  StopId lastSource;
-  StopId lastTarget;
 
   ForwardPruningQuery<Profiler> forwardPruningQuery;
   BackwardPruningQuery<Profiler> backwardPruningQuery;
@@ -552,10 +491,6 @@ private:
   std::vector<TripInfo> tripInfo;
   std::vector<EdgeLabel> edgeLabels;
   std::vector<u_int8_t> offsets;
-
-  double maxProbabilityCost = std::numeric_limits<double>::infinity();
-  bool boundJourneysByProbability = false;
-  double sufficientProbabilityCost = std::numeric_limits<double>::infinity();
 
   StopId sourceStop;
   StopId targetStop;
