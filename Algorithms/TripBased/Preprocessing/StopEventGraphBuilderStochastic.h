@@ -15,13 +15,13 @@
 namespace TripBased {
 
 struct StochasticConfig {
-  double phaseAWindowK = 3.0;
+  double phaseAWindowK = 2.0;
   double phaseAProbThreshold = 0.99;
   double phaseAStagnationEpsilon = 0.005;
   int phaseAStagnationPatience = 3;
   double phaseAMaxLookahead = 3600.0;
   int phaseAMaxCandidates = 100;
-  double feasibilityEpsilon = 0.01;
+  double feasibilityEpsilon = 0.05;
 };
 
 class StochasticStopEventGraphBuilder {

@@ -20,6 +20,7 @@ int main(int argc, char **argv) {
   new AugmentProbabilityTripBasedShortcuts(shell);
   // new ReverseTripBasedData(shell);
 
+  new RAPTORToTripBased(shell);
   new StochasticStopEventGraphBuilder(shell);
   new PrintTripTransferStats(shell);
 

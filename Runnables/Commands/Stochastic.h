@@ -7,6 +7,7 @@
 
 #include "../../Algorithms/TripBased/BoundedMcQuery/BoundedMcProbabilityQuery.h"
 #include "../../Algorithms/TripBased/Preprocessing/ProbabilityShortcutAugmenter.h"
+#include "../../Algorithms/TripBased/Preprocessing/StopEventGraphBuilder.h"
 #include "../../Algorithms/TripBased/Preprocessing/StopEventGraphBuilderStochastic.h"
 #include "../../Algorithms/TripBased/Query/McProbabilityQuery.h"
 
@@ -20,6 +21,61 @@
 #include "StochasticHelper.h"
 
 using namespace Shell;
+
+class RAPTORToTripBased : public ParameterizedCommand {
+
+public:
+  RAPTORToTripBased(BasicShell &shell)
+      : ParameterizedCommand(
+            shell, "raptorToTripBased",
+            "Converts stop-to-stop transfers to event-to-event transfers and "
+            "saves the resulting network in Trip-Based format.") {
+    addParameter("Input file");
+    addParameter("Output file");
+    addParameter("Route-based pruning?");
+    addParameter("Number of threads", "max");
+    addParameter("Pin multiplier", "1");
+  }
+
+  virtual void execute() noexcept {
+    const std::string inputFile = getParameter("Input file");
+    const std::string outputFile = getParameter("Output file");
+    const bool routeBasedPruning = getParameter<bool>("Route-based pruning?");
+    const int numberOfThreads = getNumberOfThreads();
+    const int pinMultiplier = getParameter<int>("Pin multiplier");
+
+    RAPTOR::Data raptor(inputFile);
+    raptor.printInfo();
+    TripBased::Data data(raptor);
+
+    if (numberOfThreads == 0) {
+      if (routeBasedPruning) {
+        TripBased::ComputeStopEventGraphRouteBased(data);
+      } else {
+        TripBased::ComputeStopEventGraph(data);
+      }
+    } else {
+      if (routeBasedPruning) {
+        TripBased::ComputeStopEventGraphRouteBased(data, numberOfThreads,
+                                                   pinMultiplier);
+      } else {
+        TripBased::ComputeStopEventGraph(data, numberOfThreads, pinMultiplier);
+      }
+    }
+
+    data.printInfo();
+    data.serialize(outputFile);
+  }
+
+private:
+  inline int getNumberOfThreads() const noexcept {
+    if (getParameter("Number of threads") == "max") {
+      return numberOfCores();
+    } else {
+      return getParameter<int>("Number of threads");
+    }
+  }
+};
 
 class IntermediateToRAPTORRandomDelay : public ParameterizedCommand {
 

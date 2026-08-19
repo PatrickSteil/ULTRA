@@ -250,18 +250,44 @@ private:
   }
 
   inline void evaluateInitialTransfers() noexcept {
-    // TODO add more trips than just the first one
+    // how far back we look for a trip that is scheduled to depart before our
+    // arrival at the stop but might still be catchable due to delay
+    constexpr int LOOKBACK = 2 * 60 * 60;
+    // once catching a trip is at least this likely, stop scanning later
+    // (even more likely) trips on the same route
+    constexpr double UPPER_LIMIT = 0.8;
+
+    const double maxCost = currentMaxProbabilityCost();
+
     auto collectTrips = [&](const StopId stop, const int timeOffset = 0) {
+      const int stopDepartureTime = sourceDepartureTime + timeOffset;
+      // stop-level admissibility check: unrelated to which trip we might
+      // board, so it only needs to be evaluated once per stop
+      const int arrivalTime =
+          -backwardPruningQuery.getArrivalTime(stop, maxTrips);
+      if (stopDepartureTime > arrivalTime)
+        return;
+
       for (const RAPTOR::RouteSegment &segment :
            data.routesContainingStop(stop)) {
-        const int stopDepartureTime = sourceDepartureTime + timeOffset;
-        const int arrivalTime =
-            -backwardPruningQuery.getArrivalTime(stop, maxTrips);
-        if (stopDepartureTime > arrivalTime)
-          continue;
-        const TripId trip = data.getEarliestTrip(segment, stopDepartureTime);
-        if (trip != noTripId) {
-          enqueue(trip, StopIndex(segment.stopIndex + 1), 0.0);
+        TripId trip =
+            data.getEarliestTrip(segment, stopDepartureTime - LOOKBACK);
+        const TripId lastTrip = data.firstTripOfRoute[segment.routeId + 1];
+
+        while (trip < lastTrip) {
+          const StopEventId event =
+              data.getStopEventId(trip, segment.stopIndex);
+          const double prop =
+              (1 - data.raptorData.delayDistribution[event].second.cdf(
+                       stopDepartureTime));
+          const double cost = probabilityToCost(prop);
+
+          if (TimestampedProbabilityCostData::costLessEqual(cost, maxCost)) {
+            enqueue(trip, StopIndex(segment.stopIndex + 1), cost);
+          }
+          trip++;
+          if (prop >= UPPER_LIMIT)
+            break;
         }
       }
     };
