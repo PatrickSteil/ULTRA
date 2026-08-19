@@ -67,7 +67,8 @@ private:
 
     inline bool dominates(const TargetLabel &other) const noexcept {
       return arrivalTime <= other.arrivalTime &&
-             probabilityCost <= other.probabilityCost;
+             TimestampedProbabilityCostData::costLessEqual(
+                 probabilityCost, other.probabilityCost);
     }
 
     int arrivalTime;
@@ -139,12 +140,27 @@ public:
          METRIC_ENQUEUES, METRIC_ADD_JOURNEYS, METRIC_FORWARD_ADD_JOURNEYS});
   }
 
-  inline void setMinProbability(const double pMin, const double softness = 0.5,
-                                const double maxMargin = 2.0) noexcept {
-    hasMinProbability = (pMin > 0.0);
-    minProbabilityCost = hasMinProbability ? probabilityToCost(pMin) : 0.0;
-    probabilitySoftness = softness;
-    maxProbabilityMargin = maxMargin;
+  inline void setMinProbability(const double minProbability) noexcept {
+    minProbabilityCost = (minProbability > 0.0)
+                             ? probabilityToCost(minProbability)
+                             : std::numeric_limits<double>::infinity();
+  }
+
+  inline void setProbabilityExponent(const double exponent = 2.0) noexcept {
+    probabilityExponent = exponent;
+  }
+
+  inline double currentMaxProbabilityCost() const noexcept {
+    if (probabilityExponent == 1.0 ||
+        fastestProbabilityCost == std::numeric_limits<double>::infinity())
+      return minProbabilityCost;
+
+    // std::expm1(x) calculates exp(x) - 1 accurately when x is close to 0
+    // std::log1p(x) calculates log(1 + x) accurately when x is close to 0
+    const double failureProb = -std::expm1(-fastestProbabilityCost);
+    const double cost = -std::log1p(-failureProb / probabilityExponent);
+
+    return std::min(minProbabilityCost, cost);
   }
 
   inline void run(const StopId source, const int departureTime,
@@ -250,11 +266,7 @@ private:
   }
 
   inline void evaluateInitialTransfers() noexcept {
-    // how far back we look for a trip that is scheduled to depart before our
-    // arrival at the stop but might still be catchable due to delay
     constexpr int LOOKBACK = 2 * 60 * 60;
-    // once catching a trip is at least this likely, stop scanning later
-    // (even more likely) trips on the same route
     constexpr double UPPER_LIMIT = 0.8;
 
     const double maxCost = currentMaxProbabilityCost();
@@ -416,17 +428,7 @@ private:
                                label.tripLength, probabilityCost);
   }
 
-  inline double currentMaxProbabilityCost() const noexcept {
-    if (!hasMinProbability)
-      return std::numeric_limits<double>::infinity();
-    const double confidence =
-        1.0 / (1.0 + std::exp((fastestProbabilityCost - minProbabilityCost) /
-                              probabilitySoftness));
-    return minProbabilityCost + maxProbabilityMargin * (1.0 - confidence);
-  }
-
   inline void addTargetLabel(const TargetLabel &newLabel) noexcept {
-
     if (!TimestampedProbabilityCostData::costLessEqual(
             newLabel.probabilityCost, currentMaxProbabilityCost()))
       return;
@@ -544,10 +546,9 @@ private:
   std::vector<EdgeLabel> edgeLabels;
   std::vector<u_int8_t> offsets;
 
-  bool hasMinProbability = false;
-  double minProbabilityCost = 0.0;
-  double probabilitySoftness = 0.5;
-  double maxProbabilityMargin = 2.0;
+  double minProbabilityCost = std::numeric_limits<double>::infinity();
+  double probabilityExponent = 1.0;
+
   int fastestArrivalTime = never;
   double fastestProbabilityCost = std::numeric_limits<double>::infinity();
 

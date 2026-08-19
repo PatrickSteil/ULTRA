@@ -340,8 +340,7 @@ public:
     addParameter("Arrival slack");
     addParameter("Trip slack");
     addParameter("Min Probability [%]", "0");
-    addParameter("Softness", "0.5");
-    addParameter("Max Margin", "2.0");
+    addParameter("Alpha", "2.0");
   }
 
   virtual void execute() noexcept {
@@ -361,9 +360,10 @@ public:
     const size_t n = getParameter<size_t>("Number of queries");
 
     const size_t pMin = getParameter<double>("Min Probability [%]");
-    const size_t softness = getParameter<double>("Softness");
-    const size_t maxMargin = getParameter<double>("Max Margin");
-    algo.setMinProbability(pMin, softness, maxMargin);
+    const size_t alpha = getParameter<double>("Alpha");
+
+    algo.setMinProbability(pMin / 100.0);
+    algo.setProbabilityExponent(alpha);
 
     const std::vector<VertexQuery> queries =
         generateRandomVertexQueries(tripBasedData.numberOfStops(), n);
@@ -399,8 +399,7 @@ public:
     addParameter("Arrival slack");
     addParameter("Trip slack");
     addParameter("Min Probability [%]", "0");
-    addParameter("Softness", "0.5");
-    addParameter("Max Margin", "2.0");
+    addParameter("Alpha", "2.0");
   }
 
   virtual void execute() noexcept {
@@ -426,9 +425,10 @@ public:
         tripBasedData, forwardBoundedData, backwardBoundedData);
 
     const size_t pMin = getParameter<double>("Min Probability [%]");
-    const size_t softness = getParameter<double>("Softness");
-    const size_t maxMargin = getParameter<double>("Max Margin");
-    algo.setMinProbability(pMin, softness, maxMargin);
+    const size_t alpha = getParameter<double>("Alpha");
+
+    algo.setMinProbability(pMin / 100.0);
+    algo.setProbabilityExponent(alpha);
 
     algo.run(source, departureTime, target, arrivalSlack, tripSlack);
 
