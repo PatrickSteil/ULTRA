@@ -234,7 +234,7 @@ private:
                        stopDepartureTime));
           const double cost = probabilityToCost(prop);
 
-          if (cost <= maxProbabilityCost) {
+          if (ProbabilityCostData::costLessEqual(cost, maxProbabilityCost)) {
             enqueue(trip, StopIndex(segment.stopIndex + 1), cost);
           }
           trip++;
@@ -359,7 +359,8 @@ private:
 
   inline void addTargetLabel(const TargetLabel &newLabel) noexcept {
     // hard limit
-    if (newLabel.probabilityCost > maxProbabilityCost)
+    if (!ProbabilityCostData::costLessEqual(newLabel.probabilityCost,
+                                            maxProbabilityCost))
       return;
     profiler.countMetric(METRIC_ADD_JOURNEYS);
     if (!bestTargetBag.merge(newLabel))

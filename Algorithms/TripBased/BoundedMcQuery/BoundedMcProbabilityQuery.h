@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <iostream>
 
 #include "../../../DataStructures/RAPTOR/Entities/ArrivalLabel.h"
@@ -138,6 +139,14 @@ public:
          METRIC_ENQUEUES, METRIC_ADD_JOURNEYS, METRIC_FORWARD_ADD_JOURNEYS});
   }
 
+  inline void setMinProbability(const double pMin, const double softness = 0.5,
+                                const double maxMargin = 2.0) noexcept {
+    hasMinProbability = (pMin > 0.0);
+    minProbabilityCost = hasMinProbability ? probabilityToCost(pMin) : 0.0;
+    probabilitySoftness = softness;
+    maxProbabilityMargin = maxMargin;
+  }
+
   inline void run(const StopId source, const int departureTime,
                   const StopId target, const double arrivalSlack,
                   const double tripSlack) noexcept {
@@ -227,15 +236,13 @@ private:
     targetBags.resize(1);
     targetBags[0].clear();
     bestTargetBag.clear();
+    fastestArrivalTime = never;
+    fastestProbabilityCost = std::numeric_limits<double>::infinity();
   }
 
   inline void computeInitialAndFinalTransfers() noexcept {
-    // forwardPruningQuery.run() (called just before this) already recomputed
-    // transferFromSource/transferToTarget for the current source/target pair
-    // via its own computeInitialAndFinalTransfers(), since both vectors are
-    // held by reference and shared with it. All that is left to do here is
-    // register the direct source->target connection (walking only, so it
-    // has probability cost 0) as a target label of our own.
+    // NOTE forwardPruningQuery has already filled the transferFromSource and
+    // transferToTarget vectors!
     if (transferToTarget[sourceStop] != INFTY) {
       addTargetLabel(
           TargetLabel(sourceDepartureTime + transferToTarget[sourceStop], 0.0));
@@ -243,32 +250,28 @@ private:
   }
 
   inline void evaluateInitialTransfers() noexcept {
-    for (const RAPTOR::RouteSegment &segment :
-         data.routesContainingStop(sourceStop)) {
-      const int arrivalTime =
-          -backwardPruningQuery.getArrivalTime(sourceStop, maxTrips);
-      if (sourceDepartureTime > arrivalTime)
-        continue;
-      const TripId trip = data.getEarliestTrip(segment, sourceDepartureTime);
-      if (trip != noTripId) {
-        enqueue(trip, StopIndex(segment.stopIndex + 1), 0.0);
-      }
-    }
-    for (const Edge edge : transferGraph.edgesFrom(sourceStop)) {
-      const Vertex stop = transferGraph.get(ToVertex, edge);
-      const int stopDepartureTime =
-          sourceDepartureTime + transferGraph.get(TravelTime, edge);
-      const int arrivalTime =
-          -backwardPruningQuery.getArrivalTime(StopId(stop), maxTrips);
-      if (stopDepartureTime > arrivalTime)
-        continue;
+    // TODO add more trips than just the first one
+    auto collectTrips = [&](const StopId stop, const int timeOffset = 0) {
       for (const RAPTOR::RouteSegment &segment :
-           data.routesContainingStop(StopId(stop))) {
+           data.routesContainingStop(stop)) {
+        const int stopDepartureTime = sourceDepartureTime + timeOffset;
+        const int arrivalTime =
+            -backwardPruningQuery.getArrivalTime(stop, maxTrips);
+        if (stopDepartureTime > arrivalTime)
+          continue;
         const TripId trip = data.getEarliestTrip(segment, stopDepartureTime);
         if (trip != noTripId) {
           enqueue(trip, StopIndex(segment.stopIndex + 1), 0.0);
         }
       }
+    };
+
+    collectTrips(sourceStop);
+    for (const Edge edge : transferGraph.edgesFrom(sourceStop)) {
+      const StopId stop = StopId(transferGraph.get(ToVertex, edge));
+      const int travelTime = transferGraph.get(TravelTime, edge);
+
+      collectTrips(stop, travelTime);
     }
   }
 
@@ -284,14 +287,17 @@ private:
         profiler.countMetric(METRIC_SCANNED_TRIPS);
         for (StopEventId j(label.begin + 1); j < label.end; j++) {
           const double probabilityCost = probabilityCostData(j);
-          if (probabilityCost < label.probabilityCost)
+          if (TimestampedProbabilityCostData::costLess(probabilityCost,
+                                                       label.probabilityCost)) {
             label.end = j;
-          else if (probabilityCost == label.probabilityCost &&
-                   offsets[j] != 0) {
+          } else if (TimestampedProbabilityCostData::costEqual(
+                         probabilityCost, label.probabilityCost) &&
+                     offsets[j] != 0) {
             const u_int8_t offset = offsets[j];
             for (; j < label.end; j++) {
-              if (probabilityCostData(StopEventId(j - offset)) ==
-                  label.probabilityCost)
+              if (TimestampedProbabilityCostData::costEqual(
+                      probabilityCostData(StopEventId(j - offset)),
+                      label.probabilityCost))
                 label.end = j;
             }
             break;
@@ -348,7 +354,9 @@ private:
     profiler.countMetric(METRIC_ENQUEUES);
     const TripInfo &info = tripInfo[trip];
     const StopEventId stopEvent = StopEventId(info.tripStart + index);
-    if (probabilityCost >= probabilityCostData(stopEvent))
+    if (!TimestampedProbabilityCostData::costLess(
+            probabilityCost, probabilityCostData(stopEvent)))
+
       return;
     const StopIndex reverseStopIndex(info.tripLength - index);
     if (backwardPruningQuery.getReachedIndex(
@@ -368,7 +376,8 @@ private:
     profiler.countMetric(METRIC_ENQUEUES);
     const EdgeLabel &label = edgeLabels[edge];
     probabilityCost += label.probabilityCost;
-    if (probabilityCost >= probabilityCostData(label.stopEvent))
+    if (!TimestampedProbabilityCostData::costLess(
+            probabilityCost, probabilityCostData(label.stopEvent)))
       return;
     if (backwardPruningQuery.getReachedIndex(
             label.reverseTrip, maxTrips - currentNumberOfTrips()) >
@@ -381,11 +390,28 @@ private:
                                label.tripLength, probabilityCost);
   }
 
+  inline double currentMaxProbabilityCost() const noexcept {
+    if (!hasMinProbability)
+      return std::numeric_limits<double>::infinity();
+    const double confidence =
+        1.0 / (1.0 + std::exp((fastestProbabilityCost - minProbabilityCost) /
+                              probabilitySoftness));
+    return minProbabilityCost + maxProbabilityMargin * (1.0 - confidence);
+  }
+
   inline void addTargetLabel(const TargetLabel &newLabel) noexcept {
+
+    if (!TimestampedProbabilityCostData::costLessEqual(
+            newLabel.probabilityCost, currentMaxProbabilityCost()))
+      return;
     profiler.countMetric(METRIC_ADD_JOURNEYS);
     if (!bestTargetBag.merge(newLabel))
       return;
     targetBags.back().mergeUndominated(newLabel);
+    if (newLabel.arrivalTime < fastestArrivalTime) {
+      fastestArrivalTime = newLabel.arrivalTime;
+      fastestProbabilityCost = newLabel.probabilityCost;
+    }
   }
 
   inline RAPTOR::Journey
@@ -491,6 +517,13 @@ private:
   std::vector<TripInfo> tripInfo;
   std::vector<EdgeLabel> edgeLabels;
   std::vector<u_int8_t> offsets;
+
+  bool hasMinProbability = false;
+  double minProbabilityCost = 0.0;
+  double probabilitySoftness = 0.5;
+  double maxProbabilityMargin = 2.0;
+  int fastestArrivalTime = never;
+  double fastestProbabilityCost = std::numeric_limits<double>::infinity();
 
   StopId sourceStop;
   StopId targetStop;

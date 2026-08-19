@@ -132,11 +132,11 @@ public:
   }
 };
 
-class RunMCProbabilityQueries : public ParameterizedCommand {
+class RunMcProbabilityQueries : public ParameterizedCommand {
 
 public:
-  RunMCProbabilityQueries(BasicShell &shell)
-      : ParameterizedCommand(shell, "runMCProbabilityQueries",
+  RunMcProbabilityQueries(BasicShell &shell)
+      : ParameterizedCommand(shell, "runMcProbabilityQueries",
                              "Runs random Multi-Criteria Trip-Based queries "
                              "maximizing arrival probability, "
                              "with arrival time and number of trips as the "
@@ -270,12 +270,12 @@ private:
   }
 };
 
-class RunBoundedMCProbabilityQueries : public ParameterizedCommand {
+class RunBoundedMcProbabilityQueries : public ParameterizedCommand {
 
 public:
-  RunBoundedMCProbabilityQueries(BasicShell &shell)
+  RunBoundedMcProbabilityQueries(BasicShell &shell)
       : ParameterizedCommand(
-            shell, "runBoundedMCProbabilityQueries",
+            shell, "runBoundedMcProbabilityQueries",
             "Runs the given number of random Bounded Mc Prob-TB queries.") {
     addParameter("Trip-Based input file");
     addParameter("Bounded forward Trip-Based input file");
@@ -283,6 +283,9 @@ public:
     addParameter("Number of queries");
     addParameter("Arrival slack");
     addParameter("Trip slack");
+    addParameter("Min Probability [%]", "0");
+    addParameter("Softness", "0.5");
+    addParameter("Max Margin", "2.0");
   }
 
   virtual void execute() noexcept {
@@ -300,6 +303,12 @@ public:
     const double arrivalSlack = getParameter<double>("Arrival slack");
     const double tripSlack = getParameter<double>("Trip slack");
     const size_t n = getParameter<size_t>("Number of queries");
+
+    const size_t pMin = getParameter<double>("Min Probability [%]");
+    const size_t softness = getParameter<double>("Softness");
+    const size_t maxMargin = getParameter<double>("Max Margin");
+    algo.setMinProbability(pMin, softness, maxMargin);
+
     const std::vector<VertexQuery> queries =
         generateRandomVertexQueries(tripBasedData.numberOfStops(), n);
 
@@ -315,13 +324,13 @@ public:
   }
 };
 
-// RUN ONE BOUNDED MC PROBABILITY QUERY
-class RunBoundedMCProbabilityQuery : public ParameterizedCommand {
+// RUN ONE BOUNDED Mc PROBABILITY QUERY
+class RunBoundedMcProbabilityQuery : public ParameterizedCommand {
 
 public:
-  RunBoundedMCProbabilityQuery(BasicShell &shell)
+  RunBoundedMcProbabilityQuery(BasicShell &shell)
       : ParameterizedCommand(
-            shell, "runBoundedMCProbabilityQuery",
+            shell, "runBoundedMcProbabilityQuery",
             "Runs a single Bounded Multi-Criteria Trip-Based query "
             "maximizing arrival probability, and prints the resulting "
             "journeys.") {
@@ -333,7 +342,9 @@ public:
     addParameter("Departure time");
     addParameter("Arrival slack");
     addParameter("Trip slack");
-    addParameter("Route similarity threshold", "1.0");
+    addParameter("Min Probability [%]", "0");
+    addParameter("Softness", "0.5");
+    addParameter("Max Margin", "2.0");
   }
 
   virtual void execute() noexcept {
@@ -347,8 +358,6 @@ public:
     const int departureTime = getParameter<int>("Departure time");
     const double arrivalSlack = getParameter<double>("Arrival slack");
     const double tripSlack = getParameter<double>("Trip slack");
-    const double similarityThreshold =
-        getParameter<double>("Route similarity threshold");
 
     TripBased::Data tripBasedData(inputFile);
     tripBasedData.printInfo();
@@ -360,20 +369,19 @@ public:
     TripBased::BoundedMcProbabilityQuery<TripBased::AggregateProfiler> algo(
         tripBasedData, forwardBoundedData, backwardBoundedData);
 
+    const size_t pMin = getParameter<double>("Min Probability [%]");
+    const size_t softness = getParameter<double>("Softness");
+    const size_t maxMargin = getParameter<double>("Max Margin");
+    algo.setMinProbability(pMin, softness, maxMargin);
+
     algo.run(source, departureTime, target, arrivalSlack, tripSlack);
 
     algo.getProfiler().printStatistics();
     const auto journeys = algo.getJourneys();
     const auto paretoFront = algo.getResults();
 
-    const std::vector<size_t> diverseIndices =
-        selectDiverseJourneys(journeys, similarityThreshold);
-
-    std::cout << "Found " << journeys.size() << " Pareto-optimal journeys, "
-              << diverseIndices.size()
-              << " after route-diversity filtering (threshold "
-              << similarityThreshold << "):" << std::endl;
-    for (const size_t i : diverseIndices) {
+    std::cout << "Found " << journeys.size() << " Pareto-optimal journeys\n";
+    for (size_t i = 0; i < journeys.size(); ++i) {
       std::cout << "Journey: " << (int)i
                 << ", ArrTime: " << (int)paretoFront[i].arrivalTime
                 << ", Nr Trips: " << (int)paretoFront[i].numberOfTrips
@@ -402,11 +410,11 @@ public:
 };
 
 // RUN ONE QUERY
-class RunMCProbabilityQuery : public ParameterizedCommand {
+class RunMcProbabilityQuery : public ParameterizedCommand {
 
 public:
-  RunMCProbabilityQuery(BasicShell &shell)
-      : ParameterizedCommand(shell, "runMCProbabilityQuery",
+  RunMcProbabilityQuery(BasicShell &shell)
+      : ParameterizedCommand(shell, "runMcProbabilityQuery",
                              "Runs a single Multi-Criteria Trip-Based query "
                              "maximizing arrival probability.") {
     addParameter("Trip-Based input file");

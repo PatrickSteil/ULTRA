@@ -24,11 +24,11 @@ int main(int argc, char **argv) {
   new PrintTripTransferStats(shell);
 
   // new RunTransitiveTBQueries(shell);
-  new RunMCProbabilityQueries(shell);
-  new RunMCProbabilityQuery(shell);
+  new RunMcProbabilityQueries(shell);
+  new RunMcProbabilityQuery(shell);
 
-  new RunBoundedMCProbabilityQueries(shell);
-  new RunBoundedMCProbabilityQuery(shell);
+  new RunBoundedMcProbabilityQueries(shell);
+  new RunBoundedMcProbabilityQuery(shell);
 
   shell.run();
   return 0;

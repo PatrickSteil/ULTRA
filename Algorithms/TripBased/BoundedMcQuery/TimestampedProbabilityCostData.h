@@ -11,6 +11,16 @@ class TimestampedProbabilityCostData {
 
 public:
   static constexpr double Infinity = std::numeric_limits<double>::infinity();
+  static constexpr double PROB_COST_EPS = 1e-9;
+  static bool costLessEqual(const double a, const double b) noexcept {
+    return a <= b + PROB_COST_EPS;
+  }
+  static bool costLess(const double a, const double b) noexcept {
+    return a < b - PROB_COST_EPS;
+  }
+  static bool costEqual(const double a, const double b) noexcept {
+    return !costLess(a, b) && !costLess(b, a);
+  }
 
   TimestampedProbabilityCostData(const Data &data)
       : data(data), labels(data.numberOfStopEvents(), Infinity),
