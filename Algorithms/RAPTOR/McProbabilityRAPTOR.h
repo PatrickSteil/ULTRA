@@ -25,25 +25,23 @@ public:
 private:
   struct Label {
     Label()
-        : arrivalTime(never), walkingDistance(INFTY),
+        : arrivalTime(never),
           probabilityCost(std::numeric_limits<double>::infinity()),
           parentStop(noStop), parentIndex(-1), parentDepartureTime(never),
           routeId(noRouteId) {}
 
     Label(const Label &parentLabel, const StopId stop, const size_t parentIndex)
         : arrivalTime(parentLabel.arrivalTime),
-          walkingDistance(parentLabel.walkingDistance),
           probabilityCost(parentLabel.probabilityCost), parentStop(stop),
           parentIndex(parentIndex),
           parentDepartureTime(parentLabel.arrivalTime), transferId(noEdge) {}
 
     Label(const int departureTime, const StopId sourceStop)
-        : arrivalTime(departureTime), walkingDistance(0), probabilityCost(0.0),
+        : arrivalTime(departureTime), probabilityCost(0.0),
           parentStop(sourceStop), parentIndex(-1),
           parentDepartureTime(departureTime), routeId(noRouteId) {}
 
     int arrivalTime;
-    int walkingDistance;
     double probabilityCost;
 
     StopId parentStop;
@@ -56,48 +54,41 @@ private:
 
     inline bool dominates(const Label &other) const noexcept {
       return arrivalTime <= other.arrivalTime &&
-             walkingDistance <= other.walkingDistance &&
              costLessEqual(probabilityCost, other.probabilityCost);
     }
   };
 
   struct BestLabel {
     BestLabel()
-        : arrivalTime(never), walkingDistance(INFTY),
+        : arrivalTime(never),
           probabilityCost(std::numeric_limits<double>::infinity()) {}
 
-    BestLabel(const int arrivalTime, const int walkingDistance,
-              const double probabilityCost)
-        : arrivalTime(arrivalTime), walkingDistance(walkingDistance),
-          probabilityCost(probabilityCost) {}
+    BestLabel(const int arrivalTime, const double probabilityCost)
+        : arrivalTime(arrivalTime), probabilityCost(probabilityCost) {}
 
     template <typename LABEL>
     BestLabel(const LABEL &label)
         : arrivalTime(label.arrivalTime),
-          walkingDistance(label.walkingDistance),
           probabilityCost(label.probabilityCost) {}
 
     template <typename LABEL>
     inline bool dominates(const LABEL &other) const noexcept {
       return arrivalTime <= other.arrivalTime &&
-             walkingDistance <= other.walkingDistance &&
              costLessEqual(probabilityCost, other.probabilityCost);
     }
 
     int arrivalTime;
-    int walkingDistance;
     double probabilityCost;
   };
 
   struct RouteLabel {
     const StopEvent *trip;
-    int walkingDistance;
     double probabilityCost;
     StopIndex parentStop;
     size_t parentIndex;
 
     inline bool dominates(const RouteLabel &other) const noexcept {
-      return trip <= other.trip && walkingDistance <= other.walkingDistance &&
+      return trip <= other.trip &&
              costLessEqual(probabilityCost, other.probabilityCost);
     }
   };
@@ -178,9 +169,6 @@ public:
       profiler.startPhase();
       collectRoutesServingUpdatedStops();
       profiler.donePhase(PHASE_COLLECT);
-
-      std::cout << "Round " << i << " nr routes "
-                << routesServingUpdatedStops.size() << "\n";
       profiler.startPhase();
       scanRoutes();
       profiler.donePhase(PHASE_SCAN);
@@ -350,7 +338,6 @@ private:
               if (costLessEqual(totalCost, maxProbabilityCost)) {
                 RouteLabel newLabel;
                 newLabel.trip = trip;
-                newLabel.walkingDistance = label.walkingDistance;
                 newLabel.probabilityCost = totalCost;
                 newLabel.parentStop = stopIndex;
                 newLabel.parentIndex = i;
@@ -370,7 +357,6 @@ private:
         for (const RouteLabel &label : routeBag.labels) {
           Label newLabel;
           newLabel.arrivalTime = label.trip[stopIndex].arrivalTime;
-          newLabel.walkingDistance = label.walkingDistance;
           newLabel.probabilityCost = label.probabilityCost;
           newLabel.parentStop = stops[label.parentStop];
           newLabel.parentIndex = label.parentIndex;
@@ -408,10 +394,6 @@ private:
         for (size_t i = 0; i < bag.size(); i++) {
           Label newLabel;
           newLabel.arrivalTime = bag[i].arrivalTime + travelTime;
-          newLabel.walkingDistance = bag[i].walkingDistance + travelTime;
-          // Walking transfers are treated as deterministic here (no delay
-          // model on foot transfers), so the probability of success is
-          // unaffected by taking one -- cost just carries through.
           newLabel.probabilityCost = bag[i].probabilityCost;
           newLabel.parentStop = stop;
           newLabel.parentIndex = i;
