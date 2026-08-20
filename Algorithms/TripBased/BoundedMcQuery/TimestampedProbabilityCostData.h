@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../../DataStructures/TripBased/Data.h"
+#include "../../../Helpers/ProbabilityCost.h"
 
 #include <cstdint>
 #include <limits>
@@ -8,25 +9,11 @@
 namespace TripBased {
 
 class TimestampedProbabilityCostData {
-
 public:
-  static constexpr double Infinity = std::numeric_limits<double>::infinity();
-  static constexpr double PROB_COST_EPS = 1e-9;
-  static bool costLessEqual(const double a, const double b) noexcept {
-    return a <= b + PROB_COST_EPS;
-  }
-  static bool costLess(const double a, const double b) noexcept {
-    return a < b - PROB_COST_EPS;
-  }
-  static bool costEqual(const double a, const double b) noexcept {
-    return !costLess(a, b) && !costLess(b, a);
-  }
-
   TimestampedProbabilityCostData(const Data &data)
-      : data(data), labels(data.numberOfStopEvents(), Infinity),
+      : data(data), labels(data.numberOfStopEvents(), ProbabilityCostInfinity),
         timestamps(data.numberOfStopEvents(), 0), timestamp(0) {}
 
-public:
   inline void clear() noexcept { timestamp++; }
 
   inline double operator()(const StopEventId stopEvent) noexcept {
@@ -66,7 +53,7 @@ public:
 private:
   inline double &getLabel(const StopEventId stopEvent) noexcept {
     if (timestamps[stopEvent] != timestamp) {
-      labels[stopEvent] = Infinity;
+      labels[stopEvent] = ProbabilityCostInfinity;
       timestamps[stopEvent] = timestamp;
     }
     return labels[stopEvent];

@@ -6,6 +6,7 @@
 #include "../../../DataStructures/RAPTOR/Entities/ArrivalLabel.h"
 #include "../../../DataStructures/RAPTOR/Entities/Bags.h"
 #include "../../../DataStructures/TripBased/Data.h"
+#include "../../../Helpers/ProbabilityCost.h"
 
 #include "../Query/ProbabilityData.h"
 #include "../Query/Profiler.h"
@@ -67,8 +68,7 @@ private:
 
     inline bool dominates(const TargetLabel &other) const noexcept {
       return arrivalTime <= other.arrivalTime &&
-             TimestampedProbabilityCostData::costLessEqual(
-                 probabilityCost, other.probabilityCost);
+             costLessEqual(probabilityCost, other.probabilityCost);
     }
 
     int arrivalTime;
@@ -294,7 +294,7 @@ private:
                        stopDepartureTime));
           const double cost = probabilityToCost(prop);
 
-          if (TimestampedProbabilityCostData::costLessEqual(cost, maxCost)) {
+          if (costLessEqual(cost, maxCost)) {
             enqueue(trip, StopIndex(segment.stopIndex + 1), cost);
           }
           trip++;
@@ -325,17 +325,14 @@ private:
         profiler.countMetric(METRIC_SCANNED_TRIPS);
         for (StopEventId j(label.begin + 1); j < label.end; j++) {
           const double probabilityCost = probabilityCostData(j);
-          if (TimestampedProbabilityCostData::costLess(probabilityCost,
-                                                       label.probabilityCost)) {
+          if (costLess(probabilityCost, label.probabilityCost)) {
             label.end = j;
-          } else if (TimestampedProbabilityCostData::costEqual(
-                         probabilityCost, label.probabilityCost) &&
+          } else if (costEqual(probabilityCost, label.probabilityCost) &&
                      offsets[j] != 0) {
             const u_int8_t offset = offsets[j];
             for (; j < label.end; j++) {
-              if (TimestampedProbabilityCostData::costEqual(
-                      probabilityCostData(StopEventId(j - offset)),
-                      label.probabilityCost))
+              if (costEqual(probabilityCostData(StopEventId(j - offset)),
+                            label.probabilityCost))
                 label.end = j;
             }
             break;
@@ -392,8 +389,7 @@ private:
     profiler.countMetric(METRIC_ENQUEUES);
     const TripInfo &info = tripInfo[trip];
     const StopEventId stopEvent = StopEventId(info.tripStart + index);
-    if (!TimestampedProbabilityCostData::costLess(
-            probabilityCost, probabilityCostData(stopEvent)))
+    if (!costLess(probabilityCost, probabilityCostData(stopEvent)))
 
       return;
     const StopIndex reverseStopIndex(info.tripLength - index);
@@ -414,8 +410,7 @@ private:
     profiler.countMetric(METRIC_ENQUEUES);
     const EdgeLabel &label = edgeLabels[edge];
     probabilityCost += label.probabilityCost;
-    if (!TimestampedProbabilityCostData::costLess(
-            probabilityCost, probabilityCostData(label.stopEvent)))
+    if (!costLess(probabilityCost, probabilityCostData(label.stopEvent)))
       return;
     if (backwardPruningQuery.getReachedIndex(
             label.reverseTrip, maxTrips - currentNumberOfTrips()) >
@@ -429,8 +424,7 @@ private:
   }
 
   inline void addTargetLabel(const TargetLabel &newLabel) noexcept {
-    if (!TimestampedProbabilityCostData::costLessEqual(
-            newLabel.probabilityCost, currentMaxProbabilityCost()))
+    if (!costLessEqual(newLabel.probabilityCost, currentMaxProbabilityCost()))
       return;
     profiler.countMetric(METRIC_ADD_JOURNEYS);
     if (!bestTargetBag.merge(newLabel))

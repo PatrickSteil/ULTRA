@@ -5,6 +5,7 @@
 #include <set>
 #include <string>
 
+#include "../../Algorithms/RAPTOR/McProbabilityRAPTOR.h"
 #include "../../Algorithms/TripBased/BoundedMcQuery/BoundedMcProbabilityQuery.h"
 #include "../../Algorithms/TripBased/Preprocessing/ProbabilityShortcutAugmenter.h"
 #include "../../Algorithms/TripBased/Preprocessing/StopEventGraphBuilder.h"
@@ -217,8 +218,7 @@ public:
     data.printInfo();
 
     TripBased::McProbabilityQuery<TripBased::AggregateProfiler> algo(data);
-    if (minProbabilityPercent > 0.0)
-      algo.setMinProbability(minProbabilityPercent / 100.0);
+    algo.setMinProbability(minProbabilityPercent / 100.0);
 
     std::size_t numJourneys = 0;
     std::size_t numDiverseJourneys = 0;
@@ -495,8 +495,7 @@ public:
     TripBased::Data data(inputFile);
 
     TripBased::McProbabilityQuery<TripBased::AggregateProfiler> algo(data);
-    if (minProbabilityPercent > 0.0)
-      algo.setMinProbability(minProbabilityPercent / 100.0);
+    algo.setMinProbability(minProbabilityPercent / 100.0);
 
     algo.run(source, departureTime, target);
 
@@ -599,5 +598,139 @@ public:
     algorithm.getProfiler().printStatistics();
     std::cout << "Avg. journeys: " << String::prettyDouble(numJourneys / n)
               << std::endl;
+  }
+};
+
+class RunTransitiveMcProbabilityRAPTORQueries : public ParameterizedCommand {
+
+public:
+  RunTransitiveMcProbabilityRAPTORQueries(BasicShell &shell)
+      : ParameterizedCommand(shell, "runTransitiveMcProbabilityRAPTORQueries",
+                             "Runs the given number of random transitive "
+                             "McProbabilityRAPTOR queries.") {
+    addParameter("RAPTOR input file");
+    addParameter("Number of queries");
+    addParameter("Min probability (%)", "0.0");
+  }
+
+  virtual void execute() noexcept {
+    RAPTOR::Data raptorData =
+        RAPTOR::Data::FromBinary(getParameter("RAPTOR input file"));
+    raptorData.useImplicitDepartureBufferTimes();
+    raptorData.printInfo();
+    RAPTOR::McProbabilityRAPTOR<true, true, RAPTOR::AggregateProfiler> algo(
+        raptorData);
+
+    const double minProbabilityPercent =
+        getParameter<double>("Min probability (%)");
+    algo.setMinProbability(minProbabilityPercent / 100.0);
+
+    const size_t n = getParameter<size_t>("Number of queries");
+    const std::vector<StopQuery> queries =
+        generateRandomStopQueries(raptorData.numberOfStops(), n);
+
+    double numJourneys = 0;
+    for (const StopQuery &query : queries) {
+      algo.run(query.source, query.departureTime, query.target);
+      numJourneys += algo.getJourneys().size();
+    }
+    algo.getProfiler().printStatistics();
+    std::cout << "Avg. journeys: " << String::prettyDouble(numJourneys / n)
+              << std::endl;
+  }
+};
+
+class RunTransitiveMcProbabilityRAPTORQuery : public ParameterizedCommand {
+
+public:
+  RunTransitiveMcProbabilityRAPTORQuery(BasicShell &shell)
+      : ParameterizedCommand(
+            shell, "runTransitiveMcProbabilityRAPTORQuery",
+            "Runs the given transitive McProbabilityRAPTOR query.") {
+    addParameter("RAPTOR input file");
+    addParameter("Source stop");
+    addParameter("Target stop");
+    addParameter("Departure time");
+  }
+
+  virtual void execute() noexcept {
+    RAPTOR::Data raptorData(getParameter("RAPTOR input file"));
+    raptorData.useImplicitDepartureBufferTimes();
+    raptorData.printInfo();
+    RAPTOR::McProbabilityRAPTOR<true, true, RAPTOR::AggregateProfiler> algo(
+        raptorData);
+
+    const StopId source = getParameter<StopId>("Source stop");
+    const StopId target = getParameter<StopId>("Target stop");
+    const int departureTime = getParameter<int>("Departure time");
+
+    algo.run(source, departureTime, target);
+
+    algo.getProfiler().printStatistics();
+    const auto journeys = algo.getJourneys();
+    const auto paretoFront = algo.getResults();
+
+    std::cout << "Found " << journeys.size() << " Pareto-optimal journeys\n";
+    for (size_t i = 0; i < journeys.size(); ++i) {
+      std::cout << "Journey: " << (int)i
+                << ", ArrTime: " << (int)paretoFront[i].arrivalTime
+                << ", Nr Trips: " << (int)paretoFront[i].numberOfTrips
+                << ", Prob: " << (paretoFront[i].probability() * 100.0)
+                << " %\n";
+      const auto &j = journeys[i];
+      for (const auto &leg : j) {
+        std::cout << "from: " << leg.from << ", to: " << leg.to
+                  << ", dep-Time: " << leg.departureTime
+                  << ", arr-Time: " << leg.arrivalTime
+                  << (leg.usesRoute ? ", route: " : ", transfer: ")
+                  << leg.routeId << "\n";
+      }
+      std::cout << std::endl;
+    }
+  }
+};
+
+class RunTransitiveTBQuery : public ParameterizedCommand {
+
+public:
+  RunTransitiveTBQuery(BasicShell &shell)
+      : ParameterizedCommand(shell, "runTransitiveTBQuery",
+                             "Runs the given transitive TB query.") {
+    addParameter("Trip-Based input file");
+    addParameter("Source stop");
+    addParameter("Target stop");
+    addParameter("Departure time");
+  }
+
+  virtual void execute() noexcept {
+    TripBased::Data tripBasedData(getParameter("Trip-Based input file"));
+    tripBasedData.printInfo();
+    TripBased::TransitiveQuery<TripBased::AggregateProfiler> algo(
+        tripBasedData);
+
+    const StopId source = getParameter<StopId>("Source stop");
+    const StopId target = getParameter<StopId>("Target stop");
+    const int departureTime = getParameter<int>("Departure time");
+
+    algo.run(source, departureTime, target);
+
+    algo.getProfiler().printStatistics();
+    const auto journeys = algo.getJourneys();
+
+    std::cout << "Found " << journeys.size() << " Pareto-optimal journeys\n";
+    for (size_t i = 0; i < journeys.size(); ++i) {
+      std::cout << "Journey: " << (int)i
+                << ", ArrTime: " << (int)journeys[i].back().arrivalTime
+                << ", Nr Trips: " << (int)countTrips(journeys[i]) << "\n";
+      const auto &j = journeys[i];
+      for (const auto &leg : j) {
+        std::cout << "from: " << leg.from << ", to: " << leg.to
+                  << ", dep-Time: " << leg.departureTime
+                  << ", arr-Time: " << leg.arrivalTime
+                  << (leg.usesRoute ? ", route: " : ", transfer: ")
+                  << leg.routeId << "\n";
+      }
+      std::cout << std::endl;
+    }
   }
 };

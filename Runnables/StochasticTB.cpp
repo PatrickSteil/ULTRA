@@ -25,6 +25,11 @@ int main(int argc, char **argv) {
   new PrintTripTransferStats(shell);
 
   new RunTransitiveTBQueries(shell);
+  new RunTransitiveTBQuery(shell);
+
+  new RunTransitiveMcProbabilityRAPTORQuery(shell);
+  new RunTransitiveMcProbabilityRAPTORQueries(shell);
+
   new RunMcProbabilityQueries(shell);
   new RunMcProbabilityQuery(shell);
 
