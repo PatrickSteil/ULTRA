@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
   new StochasticStopEventGraphBuilder(shell);
   new PrintTripTransferStats(shell);
 
-  // new RunTransitiveTBQueries(shell);
+  new RunTransitiveTBQueries(shell);
   new RunMcProbabilityQueries(shell);
   new RunMcProbabilityQuery(shell);
 

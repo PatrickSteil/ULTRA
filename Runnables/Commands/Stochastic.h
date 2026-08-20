@@ -10,6 +10,7 @@
 #include "../../Algorithms/TripBased/Preprocessing/StopEventGraphBuilder.h"
 #include "../../Algorithms/TripBased/Preprocessing/StopEventGraphBuilderStochastic.h"
 #include "../../Algorithms/TripBased/Query/McProbabilityQuery.h"
+#include "../../Algorithms/TripBased/Query/TransitiveQuery.h"
 
 #include "../../DataStructures/Queries/Queries.h"
 
@@ -566,5 +567,37 @@ public:
     }
     data.serialize(getParameter("Forward output file"));
     reverseData.serialize(getParameter("Backward output file"));
+  }
+};
+
+class RunTransitiveTBQueries : public ParameterizedCommand {
+
+public:
+  RunTransitiveTBQueries(BasicShell &shell)
+      : ParameterizedCommand(
+            shell, "runTransitiveTBQueries",
+            "Runs the given number of random transitive TB queries.") {
+    addParameter("Trip-Based input file");
+    addParameter("Number of queries");
+  }
+
+  virtual void execute() noexcept {
+    TripBased::Data tripBasedData(getParameter("Trip-Based input file"));
+    tripBasedData.printInfo();
+    TripBased::TransitiveQuery<TripBased::AggregateProfiler> algorithm(
+        tripBasedData);
+
+    const size_t n = getParameter<size_t>("Number of queries");
+    const std::vector<StopQuery> queries =
+        generateRandomStopQueries(tripBasedData.numberOfStops(), n);
+
+    double numJourneys = 0;
+    for (const StopQuery &query : queries) {
+      algorithm.run(query.source, query.departureTime, query.target);
+      numJourneys += algorithm.getJourneys().size();
+    }
+    algorithm.getProfiler().printStatistics();
+    std::cout << "Avg. journeys: " << String::prettyDouble(numJourneys / n)
+              << std::endl;
   }
 };

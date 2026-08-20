@@ -442,6 +442,16 @@ private:
     }
   }
 
+  inline int getTravelTime(const StopId fromStop, const StopId toStop) const {
+    if (fromStop == toStop)
+      return 0;
+    for (const Edge edge : transferGraph.edgesFrom(Vertex(fromStop))) {
+      if (StopId(transferGraph.get(ToVertex, edge) == toStop))
+        return transferGraph.get(TravelTime, edge);
+    }
+    return INFTY;
+  }
+
   inline RAPTOR::Journey
   getJourney(const TargetLabel &targetLabel) const noexcept {
     RAPTOR::Journey result;
@@ -465,8 +475,11 @@ private:
 
       const StopId arrivalStop = data.getStopOfStopEvent(arrivalStopEvent);
       const int arrivalTime = data.arrivalTime(arrivalStopEvent);
+      const int travelTime =
+          getTravelTime(StopId(departureStop), StopId(arrivalStop));
+      assert(travelTime != INFTY);
       const int transferArrivalTime =
-          (edge == noEdge) ? targetLabel.arrivalTime : arrivalTime;
+          (edge == noEdge) ? targetLabel.arrivalTime : arrivalTime + travelTime;
       result.emplace_back(arrivalStop, departureStop, arrivalTime,
                           transferArrivalTime, edge);
 
