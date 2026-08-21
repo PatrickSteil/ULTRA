@@ -151,7 +151,7 @@ public:
     targetStop = target;
     sourceDepartureTime = departureTime;
     computeInitialAndFinalTransfers();
-    evaluateInitialTransfers();
+    evaluateInitialTransfersWithLookback();
     scanTrips();
     profiler.done();
   }
@@ -221,59 +221,54 @@ private:
     profiler.donePhase(PHASE_SCAN_INITIAL);
   }
 
-  inline void evaluateInitialTransfers() noexcept {
-    profiler.startPhase();
-
-    auto collectTrips = [&](const StopId stop, const int offsetToStop = 0) {
-      const int stopDepartureTime = sourceDepartureTime + offsetToStop;
-
-      for (const RAPTOR::RouteSegment &segment :
-           data.routesContainingStop(stop)) {
-        TripId trip = data.getEarliestTrip(segment, stopDepartureTime);
-
-        if (trip != noTripId)
-          enqueue(trip, StopIndex(segment.stopIndex + 1), 0.0);
-      }
-    };
-
-    collectTrips(sourceStop);
-
-    for (const Edge edge : transferGraph.edgesFrom(sourceStop)) {
-      const StopId stop = StopId(transferGraph.get(ToVertex, edge));
-      const int transferDuration = transferGraph.get(TravelTime, edge);
-
-      collectTrips(stop, transferDuration);
-    }
-    profiler.donePhase(PHASE_EVALUATE_INITIAL);
+  inline TripId findFirstTripAtOrAfterMean(const RAPTOR::RouteSegment &route,
+                                           const int time) const noexcept {
+    if (route.stopIndex + 1 ==
+        data.raptorData.numberOfStopsInRoute(route.routeId))
+      return noTripId;
+    const TripId trip = std::lower_bound(
+        data.firstTripOfRoute[route.routeId],
+        data.firstTripOfRoute[route.routeId + 1], time,
+        [&](const TripId trip, const int time) {
+          return meanTimes[data.getStopEventId(trip, route.stopIndex)].second <
+                 time;
+        });
+    if (trip < data.firstTripOfRoute[route.routeId + 1])
+      return trip;
+    return noTripId;
   }
 
-  inline void evaluateInitialTransfersWithLookback() noexcept {
-    profiler.startPhase();
-
+  inline void scanInitialCandidates(const int lookback) noexcept {
     constexpr double UPPER_LIMIT = 0.8;
-    // how far back we want to look to potentially catch a trip that is late
-    constexpr int LOOKBACK = 2 * 60 * 60;
+    constexpr double EPSILON = 1e-3;
 
     auto collectTrips = [&](const StopId stop, const int offsetToStop = 0) {
       const int stopDepartureTime = sourceDepartureTime + offsetToStop;
 
       for (const RAPTOR::RouteSegment &segment :
            data.routesContainingStop(stop)) {
+        if (segment.stopIndex + 1 ==
+            data.raptorData.numberOfStopsInRoute(segment.routeId))
+          continue;
+
         TripId trip =
-            data.getEarliestTrip(segment, stopDepartureTime - LOOKBACK);
+            findFirstTripAtOrAfterMean(segment, stopDepartureTime - lookback);
         const TripId lastTrip = data.firstTripOfRoute[segment.routeId + 1];
 
         while (trip < lastTrip) {
           const StopEventId event =
               data.getStopEventId(trip, segment.stopIndex);
           const double prop =
-              (1 - data.raptorData.delayDistribution[event].second.cdf(
-                       stopDepartureTime));
-          const double cost = probabilityToCost(prop);
+              1.0 - data.raptorData.delayDistribution[event].second.cdf(
+                        stopDepartureTime);
 
-          if (costLessEqual(cost, maxProbabilityCost)) {
-            enqueue(trip, StopIndex(segment.stopIndex + 1), cost);
+          if (prop >= EPSILON) {
+            const double cost = probabilityToCost(prop);
+            if (costLessEqual(cost, maxProbabilityCost)) {
+              enqueue(trip, StopIndex(segment.stopIndex + 1), cost);
+            }
           }
+
           trip++;
           if (prop >= UPPER_LIMIT)
             break;
@@ -286,9 +281,20 @@ private:
     for (const Edge edge : transferGraph.edgesFrom(sourceStop)) {
       const StopId stop = StopId(transferGraph.get(ToVertex, edge));
       const int transferDuration = transferGraph.get(TravelTime, edge);
-
       collectTrips(stop, transferDuration);
     }
+  }
+
+  inline void evaluateInitialTransfers() noexcept {
+    profiler.startPhase();
+    scanInitialCandidates(0);
+    profiler.donePhase(PHASE_EVALUATE_INITIAL);
+  }
+
+  inline void evaluateInitialTransfersWithLookback() noexcept {
+    profiler.startPhase();
+    constexpr int LOOKBACK = 2 * 60 * 60;
+    scanInitialCandidates(LOOKBACK);
     profiler.donePhase(PHASE_EVALUATE_INITIAL);
   }
 

@@ -43,3 +43,11 @@ inline double probabilityToCost(const double probability) noexcept {
 inline double costToProbability(const double cost) noexcept {
   return std::exp(-cost);
 }
+
+static inline double normalSurvival(const double mean, const double var,
+                                    const double x) noexcept {
+  if (var <= 0.0)
+    return (x <= mean) ? 1.0 : 0.0;
+  const double z = (x - mean) / std::sqrt(var);
+  return 0.5 * std::erfc(z / std::sqrt(2.0));
+}

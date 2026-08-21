@@ -169,6 +169,66 @@ private:
   }
 };
 
+#include <iomanip>
+
+class PrintTripDelayScenario : public ParameterizedCommand {
+public:
+  PrintTripDelayScenario(BasicShell &shell)
+      : ParameterizedCommand(shell, "printTripDelayScenario",
+                             "Prints delay scenario along the given trip.") {
+    addParameter("Input file (TB)");
+    addParameter("Trip Id");
+  }
+
+  virtual void execute() noexcept {
+    const std::string inputFile = getParameter("Input file (TB)");
+    const TripId trip = getParameter<TripId>("Trip Id");
+    TripBased::Data data(inputFile);
+
+    std::cout << "Delay scenario for Trip " << (int)trip << ":\n\n";
+
+    std::cout << std::left << std::setw(6) << "Event" << std::setw(9)
+              << "SchedArr" << std::setw(9) << "SchedDep" << std::setw(10)
+              << "MeanArr" << std::setw(9) << "ArrΔ" << std::setw(9) << "ArrSD"
+              << std::setw(10) << "MeanDep" << std::setw(9) << "DepΔ"
+              << std::setw(9) << "DepSD"
+              << "  Flag\n";
+    std::cout << std::string(88, '-') << "\n";
+
+    const StopEventId begin = data.firstStopEventOfTrip[trip];
+    const StopEventId end = data.firstStopEventOfTrip[trip + 1];
+
+    int prevMeanDeparture = std::numeric_limits<int>::min();
+
+    for (StopEventId e = begin; e < end; ++e) {
+      const int schedArr = data.arrivalTime(e);
+      const int schedDep = data.departureTime(e);
+      const double meanArr = data.raptorData.delayDistribution[e].first.mean();
+      const double sdArr = data.raptorData.delayDistribution[e].first.stddev();
+      const double meanDep = data.raptorData.delayDistribution[e].second.mean();
+      const double sdDep = data.raptorData.delayDistribution[e].second.stddev();
+
+      std::string flag;
+      if (meanArr < prevMeanDeparture)
+        flag += "[NEG-DWELL] "; // arrival mean earlier than prior stop's
+                                // departure mean
+      if (meanDep < meanArr)
+        flag += "[NEG-DEP] "; // departure mean earlier than this stop's own
+                              // arrival mean
+      prevMeanDeparture = static_cast<int>(std::lround(meanDep));
+
+      std::cout << std::left << std::setw(6) << (int)e << std::setw(9)
+                << schedArr << std::setw(9) << schedDep << std::fixed
+                << std::setprecision(1) << std::setw(10) << meanArr
+                << std::showpos << std::setw(9) << (meanArr - schedArr)
+                << std::noshowpos << std::setw(9) << sdArr << std::setw(10)
+                << meanDep << std::showpos << std::setw(9)
+                << (meanDep - schedDep) << std::noshowpos << std::setw(9)
+                << sdDep << "  " << flag << "\n";
+    }
+  }
+};
+
 class PrintTripTransferStats : public ParameterizedCommand {
 public:
   PrintTripTransferStats(BasicShell &shell)
@@ -651,6 +711,7 @@ public:
     addParameter("Source stop");
     addParameter("Target stop");
     addParameter("Departure time");
+    addParameter("Min probability (%)", "0.0");
   }
 
   virtual void execute() noexcept {
@@ -659,6 +720,10 @@ public:
     raptorData.printInfo();
     RAPTOR::McProbabilityRAPTOR<true, true, RAPTOR::AggregateProfiler> algo(
         raptorData);
+
+    const double minProbabilityPercent =
+        getParameter<double>("Min probability (%)");
+    algo.setMinProbability(minProbabilityPercent / 100.0);
 
     const StopId source = getParameter<StopId>("Source stop");
     const StopId target = getParameter<StopId>("Target stop");

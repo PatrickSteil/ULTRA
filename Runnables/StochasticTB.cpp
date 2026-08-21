@@ -23,6 +23,7 @@ int main(int argc, char **argv) {
   new RAPTORToTripBased(shell);
   new StochasticStopEventGraphBuilder(shell);
   new PrintTripTransferStats(shell);
+  new PrintTripDelayScenario(shell);
 
   new RunTransitiveTBQueries(shell);
   new RunTransitiveTBQuery(shell);

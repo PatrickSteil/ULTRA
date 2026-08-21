@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <vector>
 
 #include "../../DataStructures/Container/IndexedSet.h"
@@ -25,23 +26,25 @@ public:
 private:
   struct Label {
     Label()
-        : arrivalTime(never),
+        : arrivalTime(never), varArrival(0.0),
           probabilityCost(std::numeric_limits<double>::infinity()),
           parentStop(noStop), parentIndex(-1), parentDepartureTime(never),
           routeId(noRouteId) {}
 
     Label(const Label &parentLabel, const StopId stop, const size_t parentIndex)
         : arrivalTime(parentLabel.arrivalTime),
+          varArrival(parentLabel.varArrival),
           probabilityCost(parentLabel.probabilityCost), parentStop(stop),
           parentIndex(parentIndex),
           parentDepartureTime(parentLabel.arrivalTime), transferId(noEdge) {}
 
     Label(const int departureTime, const StopId sourceStop)
-        : arrivalTime(departureTime), probabilityCost(0.0),
+        : arrivalTime(departureTime), varArrival(0.0), probabilityCost(0.0),
           parentStop(sourceStop), parentIndex(-1),
           parentDepartureTime(departureTime), routeId(noRouteId) {}
 
     int arrivalTime;
+    double varArrival;
     double probabilityCost;
 
     StopId parentStop;
@@ -123,6 +126,7 @@ public:
         profiler(profilerTemplate) {
     Assert(data.hasImplicitBufferTimes(),
            "Departure buffer times have to be implicit!");
+
     profiler.registerExtraRounds(
         {EXTRA_ROUND_CLEAR, EXTRA_ROUND_INITIALIZATION});
     profiler.registerPhases(
@@ -270,10 +274,6 @@ private:
     }
   }
 
-  // Binary search for the first trip on [firstTrip, lastTrip) whose
-  // departure at stopIndex is >= time. Same role as a plain deterministic
-  // earliest-trip search, just used here as a *starting point* for the
-  // probabilistic scan rather than as the final answer.
   inline const StopEvent *
   findFirstTripAtOrAfter(const StopEvent *firstTrip, const StopEvent *lastTrip,
                          const StopIndex stopIndex, const size_t tripSize,
@@ -282,7 +282,9 @@ private:
     size_t hi = (lastTrip - firstTrip) / tripSize;
     while (lo < hi) {
       const size_t mid = lo + (hi - lo) / 2;
-      if ((firstTrip + mid * tripSize)[stopIndex].departureTime < time) {
+      const std::size_t stopEventIdx =
+          (mid * tripSize) + stopIndex + (firstTrip - data.stopEvents.data());
+      if (data.delayDistribution[stopEventIdx].second.mean() < time) {
         lo = mid + 1;
       } else {
         hi = mid;
@@ -293,8 +295,8 @@ private:
 
   inline void scanRoutes() noexcept {
     constexpr double UPPER_LIMIT = 0.8;
-    constexpr int LOOKBACK = 0;
-    // constexpr int LOOKBACK = 2 * 60 * 60;
+    // constexpr int LOOKBACK = 0;
+    constexpr int LOOKBACK = 2 * 60 * 60;
     constexpr double EPSILON = 1e-3;
 
     stopsUpdatedByRoute.clear();
@@ -327,9 +329,18 @@ private:
 
           while (trip < lastTrip) {
             const size_t stopEvent = trip - basePtr;
+            Assert(stopEvent < data.delayDistribution.size(),
+                   "StopEvent is out of bounds!");
+
+            const auto &departureDist =
+                data.delayDistribution[stopEvent].second;
+
             const double prop =
-                1.0 -
-                data.delayDistribution[stopEvent].second.cdf(label.arrivalTime);
+                (label.varArrival <= 0.0)
+                    ? (1.0 - departureDist.cdf(label.arrivalTime))
+                    : normalSurvival(
+                          departureDist.mean() - label.arrivalTime,
+                          departureDist.variance() + label.varArrival, 0.0);
 
             if (prop >= EPSILON) {
               const double boardingCost = probabilityToCost(prop);
@@ -356,7 +367,13 @@ private:
         profiler.countMetric(METRIC_ROUTE_SEGMENTS);
         for (const RouteLabel &label : routeBag.labels) {
           Label newLabel;
-          newLabel.arrivalTime = label.trip[stopIndex].arrivalTime;
+          const std::size_t stopEvent = label.trip - basePtr + stopIndex;
+          Assert(stopEvent < data.delayDistribution.size(),
+                 "StopEvent is out of bounds!");
+          const auto &arrivalDist = data.delayDistribution[stopEvent].first;
+
+          newLabel.arrivalTime = arrivalDist.mean();
+          newLabel.varArrival = arrivalDist.variance();
           newLabel.probabilityCost = label.probabilityCost;
           newLabel.parentStop = stops[label.parentStop];
           newLabel.parentIndex = label.parentIndex;
@@ -377,8 +394,6 @@ private:
       const BagType &bag = previousRound()[stop];
       currentRound()[stop].resize(bag.size());
       for (size_t i = 0; i < bag.size(); i++) {
-        // probabilityCost carried through via the Label(parent, stop, idx)
-        // constructor above -- unchanged here.
         currentRound()[stop][i] = Label(bag[i], stop, i);
       }
     }
@@ -395,6 +410,7 @@ private:
           Label newLabel;
           newLabel.arrivalTime = bag[i].arrivalTime + travelTime;
           newLabel.probabilityCost = bag[i].probabilityCost;
+          newLabel.varArrival = bag[i].varArrival;
           newLabel.parentStop = stop;
           newLabel.parentIndex = i;
           newLabel.parentDepartureTime = bag[i].arrivalTime;
